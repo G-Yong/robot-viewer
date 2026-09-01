@@ -58,12 +58,6 @@ export class UI {
   private opcua: OpcuaConfig = defaultOpcuaConfig();
   private opcuaUserModified = false;
   private opcuaFields: Record<string, HTMLInputElement | HTMLSelectElement> = {};
-  private mappingRows: {
-    identifier: HTMLInputElement;
-    enabled: HTMLInputElement;
-    scale: HTMLInputElement;
-    offset: HTMLInputElement;
-  }[] = [];
 
   constructor(
     private readonly root: HTMLElement,
@@ -399,9 +393,6 @@ export class UI {
 
   private opcuaMappingSection(): HTMLElement {
     const { section, body } = this.section("5 · Joint Mapping");
-    const reset = el("button", { class: "action secondary" }, ["Reset suffixes to joint names"]);
-    reset.addEventListener("click", () => this.resetSuffixesToJointNames());
-    body.appendChild(el("div", { class: "row" }, [reset]));
     this.mappingBody = el("div", { class: "mapping" });
     body.appendChild(this.mappingBody);
     this.rebuildJointMappings(this.opcua.mappings.map((m) => m.joint));
@@ -456,7 +447,6 @@ export class UI {
     );
 
     this.mappingBody.innerHTML = "";
-    this.mappingRows = [];
 
     if (jointNames.length === 0) {
       this.mappingBody.appendChild(
@@ -516,30 +506,7 @@ export class UI {
         offset,
       ]);
       this.mappingBody.appendChild(row);
-      this.mappingRows.push({ identifier, enabled, scale, offset });
     }
-  }
-
-  private resetSuffixesToJointNames(): void {
-    for (let i = 0; i < this.opcua.mappings.length; i++) {
-      const m = this.opcua.mappings[i];
-      m.identifier = m.joint;
-      const row = this.mappingRows[i];
-      if (row) {
-        row.identifier.value = m.identifier;
-        // Flash the field so the reset is visible even when the value was
-        // already the joint name (the previous default).
-        this.flash(row.identifier);
-      }
-    }
-    this.emitOpcuaChange();
-  }
-
-  private flash(input: HTMLInputElement): void {
-    input.style.outline = "2px solid var(--accent)";
-    setTimeout(() => {
-      input.style.outline = "";
-    }, 400);
   }
 
   private updateOpcua(patch: Partial<OpcuaConfig>): void {
