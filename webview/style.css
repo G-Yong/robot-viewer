@@ -52,6 +52,22 @@ body,
   transform: translateX(var(--sidebar-width));
 }
 
+/* Drag handle on the sidebar's left edge to resize its width. */
+#resize-handle {
+  position: absolute;
+  top: 0;
+  left: -5px;
+  width: 10px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 30;
+}
+
+#resize-handle:hover {
+  background: var(--accent);
+  opacity: 0.5;
+}
+
 /* Pull tab that stays visible when the panel is slid out. */
 #sidebar-handle {
   position: absolute;

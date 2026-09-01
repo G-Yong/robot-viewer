@@ -106,6 +106,7 @@ export class OpcuaBridge {
       });
 
       const active = cfg.mappings.filter((m) => m.enabled);
+      const unit = cfg.valueUnit === "deg" ? DEG2RAD : 1;
       let subscribedCount = 0;
 
       // Subscribe per joint; a bad NodeId must not tear down the whole
@@ -127,7 +128,6 @@ export class OpcuaBridge {
           item.on("changed", (dataValue: any) => {
             const raw = dataValue?.value?.value;
             if (typeof raw === "number" && !Number.isNaN(raw)) {
-              const unit = cfg.valueUnit === "deg" ? DEG2RAD : 1;
               const value = raw * unit * m.scale + m.offset;
               this.jointStates.set(joint, { joint, nodeId, status: "subscribed", value });
               this.emitJointState();
@@ -145,6 +145,24 @@ export class OpcuaBridge {
             });
             this.emitJointState();
           });
+
+          // node-opcua may defer the initial 'changed' event, so read the
+          // current value once so the UI shows a value immediately.
+          try {
+            const dv = await this.session.readValue({
+              nodeId,
+              attributeId: AttributeIds.Value,
+            });
+            const raw = dv?.value?.value;
+            if (typeof raw === "number" && !Number.isNaN(raw)) {
+              const value = raw * unit * m.scale + m.offset;
+              this.jointStates.set(joint, { joint, nodeId, status: "subscribed", value });
+              this.emitJointState();
+              this.onValues({ [joint]: value });
+            }
+          } catch {
+            /* keep the subscribed state; no initial value yet */
+          }
         } catch (e: any) {
           const st = this.jointStates.get(joint);
           this.jointStates.set(joint, {

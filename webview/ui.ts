@@ -72,6 +72,8 @@ export class UI {
   private build(): void {
     this.sidebar = el("div", { id: "sidebar" });
 
+    this.makeResizable();
+
     const handle = el("button", { id: "sidebar-handle", title: "Collapse / expand" }, [
       "▶",
     ]) as HTMLButtonElement;
@@ -99,6 +101,34 @@ export class UI {
       "Left-drag: rotate • Right-drag: pan • Wheel: zoom",
     ]);
     this.root.appendChild(hint);
+  }
+
+  /** Allow the sidebar to be widened/narrowed by dragging its left edge. */
+  private makeResizable(): void {
+    const handle = el("div", { id: "resize-handle" });
+    this.sidebar.appendChild(handle);
+
+    let dragging = false;
+    handle.addEventListener("pointerdown", (e: PointerEvent) => {
+      dragging = true;
+      e.preventDefault();
+      // Disable the collapse transition so resizing feels immediate.
+      this.sidebar.style.transition = "none";
+      handle.setPointerCapture(e.pointerId);
+    });
+    handle.addEventListener("pointermove", (e: PointerEvent) => {
+      if (!dragging) {
+        return;
+      }
+      const width = Math.min(700, Math.max(240, window.innerWidth - e.clientX));
+      document.documentElement.style.setProperty("--sidebar-width", `${width}px`);
+    });
+    const stop = () => {
+      dragging = false;
+      this.sidebar.style.transition = "";
+    };
+    handle.addEventListener("pointerup", stop);
+    handle.addEventListener("pointercancel", stop);
   }
 
   private addTab(
