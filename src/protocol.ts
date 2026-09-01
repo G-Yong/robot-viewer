@@ -55,7 +55,7 @@ export interface ViewerSettings {
 export interface OpcuaJointMapping {
   /** Robot joint name. */
   joint: string;
-  /** NodeId identifier part (without the "ns=..;s=" prefix), or a full NodeId. */
+  /** The joint-specific part of the identifier, appended to the common prefix. */
   identifier: string;
   enabled: boolean;
   /** Incoming value is transformed as value * scale + offset. */
@@ -72,8 +72,8 @@ export interface OpcuaConfig {
   namespace: number;
   /** Identifier kind: string (s), numeric (i), guid (g), opaque (b). */
   identifierType: "s" | "i" | "g" | "b";
-  /** Template used to auto-fill each joint identifier; {joint} is substituted. */
-  identifierTemplate: string;
+  /** Common identifier prefix shared by all joints (e.g. "Joints/"). */
+  identifierPrefix: string;
   /** Incoming unit; "deg" values are converted to radians before display. */
   valueUnit: "rad" | "deg";
   /** Monitored-item sampling interval in milliseconds. */

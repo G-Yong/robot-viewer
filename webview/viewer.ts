@@ -76,13 +76,17 @@ export class Viewer {
     this.scene.add(this.robotRoot);
 
     window.addEventListener("resize", () => this.resize());
+    // The webview panel can resize without a window 'resize' event.
+    new ResizeObserver(() => this.resize()).observe(document.body);
     this.resize();
     this.animate();
   }
 
   private resize(): void {
-    const w = this.canvas.clientWidth || window.innerWidth;
-    const h = this.canvas.clientHeight || window.innerHeight;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    // updateStyle=false: CSS keeps the canvas at 100% while the draw buffer
+    // matches the window, so the view fills the page and never overflows.
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();

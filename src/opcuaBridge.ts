@@ -23,14 +23,15 @@ export class OpcuaBridge {
   }
 
   private buildNodeId(cfg: OpcuaConfig, m: OpcuaJointMapping): string {
-    const id = m.identifier.trim();
-    // Allow a fully-qualified NodeId to be entered directly.
-    if (/^ns=\d+;/i.test(id)) {
-      return id;
+    const suffix = m.identifier.trim();
+    // Allow a fully-qualified NodeId to be entered directly in the suffix.
+    if (/^ns=\d+;/i.test(suffix)) {
+      return suffix;
     }
-    if (/^(i|s|g|b)=/i.test(id)) {
-      return `ns=${cfg.namespace};${id}`;
+    if (/^(i|s|g|b)=/i.test(suffix)) {
+      return `ns=${cfg.namespace};${suffix}`;
     }
+    const id = `${cfg.identifierPrefix}${suffix}`;
     return `ns=${cfg.namespace};${cfg.identifierType}=${id}`;
   }
 
@@ -98,7 +99,7 @@ export class OpcuaBridge {
         priority: 10,
       });
 
-      const active = cfg.mappings.filter((m) => m.enabled && m.identifier.trim());
+      const active = cfg.mappings.filter((m) => m.enabled);
 
       for (const m of active) {
         const nodeId = this.buildNodeId(cfg, m);

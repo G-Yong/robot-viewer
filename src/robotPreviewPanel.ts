@@ -235,7 +235,7 @@ export class RobotPreviewPanel {
     // Split a template like "ns=2;s=Joints/{joint}" into namespace + id parts.
     let namespace = 2;
     let identifierType: OpcuaConfig["identifierType"] = "s";
-    let identifierTemplate = "{joint}";
+    let identifierPrefix = "Joints/";
     const nsMatch = /ns=(\d+);/i.exec(template);
     if (nsMatch) {
       namespace = Number(nsMatch[1]);
@@ -243,10 +243,11 @@ export class RobotPreviewPanel {
     const idMatch = /;?\s*(i|s|g|b)=(.*)$/i.exec(template);
     if (idMatch) {
       identifierType = idMatch[1].toLowerCase() as OpcuaConfig["identifierType"];
-      identifierTemplate = idMatch[2];
+      // The common prefix is everything before the {joint} placeholder.
+      identifierPrefix = idMatch[2].replace(/\{joint\}.*$/i, "");
     }
 
-    return { host, port, namespace, identifierType, identifierTemplate };
+    return { host, port, namespace, identifierType, identifierPrefix };
   }
 
   private extractJointNames(urdf: string): string[] {

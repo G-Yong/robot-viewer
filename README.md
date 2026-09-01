@@ -11,6 +11,7 @@ A VS Code extension for importing and visualizing robot models (URDF / Xacro) di
 - **Joint control** — A slider per movable joint with live value readout (degrees for revolute/continuous, meters for prismatic).
 - **Rendering settings** — Background color, ground grid, ambient/key light intensity, visual/collision geometry toggles, wireframe, and up-axis (`+Z` URDF convention or `+Y`).
 - **Scene save/load** — Persist joint values, camera pose and render settings to a `*.robotscene.json` file and restore them later.
+- **Floating panels** — A toolbar (Joints, Camera, Rendering, Scene, OPC UA) opens each control set as its own draggable, closable window instead of one long sidebar.
 - **Live sync (OPC UA)** — A six-part configuration panel (Connection, Security, Address Space, Variable Naming, Joint Mapping, Runtime) subscribes to a NodeId per joint and mirrors external joint states into the viewer in real time.
 - **Package resolution** — Resolve `package://<pkg>/...` mesh references via the `robotViewer.packages` setting. The model's own directory and its parent are always searched too, so meshes resolve even when the `package://` name doesn't match a real folder.
 
@@ -56,8 +57,8 @@ Open the **Live Sync (OPC UA)** panel in the sidebar and configure the connectio
 1. **Connection** — server host/IP and port.
 2. **Security** — security mode, policy, and optional username/password (leave the username empty for anonymous access).
 3. **Address Space** — namespace index and NodeId identifier type (string / numeric / GUID / opaque).
-4. **Variable Naming** — an identifier template (`{joint}` is substituted with each joint name) plus an *Apply to all joints* button.
-5. **Joint Mapping** — a per-joint table: enable/disable, edit the NodeId identifier, and set a `scale` / `offset` applied to each incoming value.
+4. **Variable Naming** — the common identifier **prefix** shared by every joint (e.g. `Joints/`). The full NodeId is `ns=<n>;<type>=<prefix><suffix>`.
+5. **Joint Mapping** — a per-joint table where you only enter the differing **suffix** (defaults to the joint name), plus enable/disable and a `scale` / `offset` applied to each incoming value.
 6. **Runtime** — monitored-item sampling interval, incoming value unit (radians or degrees), and the **Connect / Disconnect** button with live status.
 
 `robotViewer.opcua.endpoint` and `robotViewer.opcua.nodeIdTemplate` seed the panel's initial values; anything you change in the panel is remembered per preview. Passwords are never written to disk.
