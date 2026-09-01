@@ -4,6 +4,7 @@ import type {
   JointValues,
   OpcuaConfig,
   OpcuaJointMapping,
+  OpcuaJointLiveState,
 } from "../src/protocol";
 
 export interface UICallbacks {
@@ -53,6 +54,7 @@ export class UI {
   private mappingBody!: HTMLElement;
   private sliders = new Map<string, HTMLInputElement>();
   private valueLabels = new Map<string, HTMLElement>();
+  private liveCells = new Map<string, { dot: HTMLElement; value: HTMLElement }>();
   private opcuaConnected = false;
 
   private opcua: OpcuaConfig = defaultOpcuaConfig();
@@ -477,6 +479,7 @@ export class UI {
     );
 
     this.mappingBody.innerHTML = "";
+    this.liveCells.clear();
 
     if (jointNames.length === 0) {
       this.mappingBody.appendChild(
@@ -488,6 +491,7 @@ export class UI {
     const header = el("div", { class: "map-head" }, [
       el("span", {}, ["On"]),
       el("span", {}, ["Joint"]),
+      el("span", {}, ["Value"]),
       el("span", {}, ["Suffix"]),
       el("span", {}, ["×"]),
       el("span", {}, ["+"]),
@@ -497,6 +501,12 @@ export class UI {
     for (const m of this.opcua.mappings) {
       const enabled = el("input", { type: "checkbox" }) as HTMLInputElement;
       enabled.checked = m.enabled;
+      const dot = el("span", { class: "live-dot", title: "not connected" });
+      const jointCell = el("span", { class: "map-joint" }, [
+        dot,
+        el("span", { class: "map-joint-name", title: m.joint }, [m.joint]),
+      ]);
+      const value = el("span", { class: "live-value" }, ["—"]);
       const identifier = el("input", {
         type: "text",
         class: "map-id",
@@ -530,12 +540,33 @@ export class UI {
 
       const row = el("div", { class: "map-row" }, [
         enabled,
-        el("span", { class: "map-joint", title: m.joint }, [m.joint]),
+        jointCell,
+        value,
         identifier,
         scale,
         offset,
       ]);
       this.mappingBody.appendChild(row);
+      this.liveCells.set(m.joint, { dot, value });
+    }
+  }
+
+  /** Reflect live OPC UA subscription state + latest value per joint. */
+  updateOpcuaJointStates(states: OpcuaJointLiveState[]): void {
+    for (const st of states) {
+      const cell = this.liveCells.get(st.joint);
+      if (!cell) {
+        continue;
+      }
+      cell.dot.className = `live-dot status-${st.status}`;
+      cell.dot.title =
+        st.status === "error"
+          ? `${st.nodeId ?? ""} — ${st.error ?? "error"}`
+          : st.status === "closed"
+            ? `${st.nodeId ?? ""} — closed`
+            : st.nodeId ?? st.status;
+      cell.value.textContent =
+        st.value === undefined ? "—" : `${(st.value * RAD2DEG).toFixed(1)}°`;
     }
   }
 

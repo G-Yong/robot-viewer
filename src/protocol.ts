@@ -26,6 +26,7 @@ export type HostToWebview =
   | { type: "loadScene"; scene: SceneConfig }
   | { type: "requestScene" }
   | { type: "opcuaInit"; config: Partial<OpcuaConfig> }
+  | { type: "opcuaJointState"; joints: OpcuaJointLiveState[] }
   | { type: "connectionStatus"; connected: boolean; detail?: string };
 
 // ---- Webview -> Extension host ------------------------------------------------
@@ -95,6 +96,15 @@ export interface OpcuaConfig {
   username: string;
   password: string;
   mappings: OpcuaJointMapping[];
+}
+
+/** Live per-joint subscription status + latest value, pushed to the webview. */
+export interface OpcuaJointLiveState {
+  joint: string;
+  nodeId?: string;
+  status: "pending" | "subscribed" | "error" | "closed";
+  value?: number;
+  error?: string;
 }
 
 export interface SceneConfig {

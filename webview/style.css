@@ -278,7 +278,7 @@ input[type="color"] {
 .map-head,
 .map-row {
   display: grid;
-  grid-template-columns: 20px 1fr 1.4fr 46px 46px;
+  grid-template-columns: 20px 1fr 54px 1.4fr 46px 46px;
   gap: 4px;
   align-items: center;
 }
@@ -294,9 +294,43 @@ input[type="color"] {
 }
 
 .map-joint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.map-joint-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.live-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #888;
+}
+
+.live-dot.status-subscribed {
+  background: #66bb6a;
+}
+
+.live-dot.status-error {
+  background: #ef5350;
+}
+
+.live-dot.status-closed {
+  background: #888;
+}
+
+.live-value {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .map-id,

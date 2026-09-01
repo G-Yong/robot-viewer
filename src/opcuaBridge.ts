@@ -1,4 +1,4 @@
-import type { OpcuaConfig, OpcuaJointMapping } from "./protocol";
+import type { OpcuaConfig, OpcuaJointMapping, OpcuaJointLiveState } from "./protocol";
 
 const DEG2RAD = Math.PI / 180;
 
@@ -12,14 +12,20 @@ export class OpcuaBridge {
   private session: any;
   private subscription: any;
   private connected = false;
+  private jointStates = new Map<string, OpcuaJointLiveState>();
 
   constructor(
     private readonly onValues: (values: Record<string, number>) => void,
-    private readonly onStatus: (connected: boolean, detail?: string) => void
+    private readonly onStatus: (connected: boolean, detail?: string) => void,
+    private readonly onJointState: (states: OpcuaJointLiveState[]) => void
   ) {}
 
   isConnected(): boolean {
     return this.connected;
+  }
+
+  private emitJointState(): void {
+    this.onJointState([...this.jointStates.values()]);
   }
 
   private buildNodeId(cfg: OpcuaConfig, m: OpcuaJointMapping): string {
@@ -100,29 +106,63 @@ export class OpcuaBridge {
       });
 
       const active = cfg.mappings.filter((m) => m.enabled);
+      let subscribedCount = 0;
 
+      // Subscribe per joint; a bad NodeId must not tear down the whole
+      // connection, so each monitor is guarded individually.
       for (const m of active) {
+        const joint = m.joint;
         const nodeId = this.buildNodeId(cfg, m);
-        const item = await this.subscription.monitor(
-          { nodeId, attributeId: AttributeIds.Value },
-          { samplingInterval: cfg.samplingInterval, discardOldest: true, queueSize: 10 },
-          TimestampsToReturn.Both
-        );
-        item.on("changed", (dataValue: any) => {
-          const raw = dataValue?.value?.value;
-          if (typeof raw === "number" && !Number.isNaN(raw)) {
-            const unit = cfg.valueUnit === "deg" ? DEG2RAD : 1;
-            const value = raw * unit * m.scale + m.offset;
-            this.onValues({ [m.joint]: value });
-          }
-        });
-        item.on("err", (msg: string) =>
-          this.onStatus(this.connected, `joint '${m.joint}': ${msg}`)
-        );
+        this.jointStates.set(joint, { joint, nodeId, status: "pending" });
+
+        try {
+          const item = await this.subscription.monitor(
+            { nodeId, attributeId: AttributeIds.Value },
+            { samplingInterval: cfg.samplingInterval, discardOldest: true, queueSize: 10 },
+            TimestampsToReturn.Both
+          );
+          subscribedCount += 1;
+          this.jointStates.set(joint, { joint, nodeId, status: "subscribed" });
+
+          item.on("changed", (dataValue: any) => {
+            const raw = dataValue?.value?.value;
+            if (typeof raw === "number" && !Number.isNaN(raw)) {
+              const unit = cfg.valueUnit === "deg" ? DEG2RAD : 1;
+              const value = raw * unit * m.scale + m.offset;
+              this.jointStates.set(joint, { joint, nodeId, status: "subscribed", value });
+              this.emitJointState();
+              this.onValues({ [joint]: value });
+            }
+          });
+          item.on("err", (msg: string) => {
+            const st = this.jointStates.get(joint);
+            this.jointStates.set(joint, {
+              joint,
+              nodeId,
+              status: "error",
+              value: st?.value,
+              error: String(msg),
+            });
+            this.emitJointState();
+          });
+        } catch (e: any) {
+          const st = this.jointStates.get(joint);
+          this.jointStates.set(joint, {
+            joint,
+            nodeId,
+            status: "error",
+            value: st?.value,
+            error: e?.message ?? String(e),
+          });
+        }
       }
 
+      this.emitJointState();
       this.connected = true;
-      this.onStatus(true, `connected to ${endpoint} (${active.length} joints)`);
+      this.onStatus(
+        true,
+        `connected to ${endpoint} (${subscribedCount}/${active.length} joints)`
+      );
     } catch (e: any) {
       await this.safeCleanup();
       this.onStatus(false, e?.message ?? String(e));
@@ -154,6 +194,10 @@ export class OpcuaBridge {
 
   async disconnect(): Promise<void> {
     await this.safeCleanup();
+    for (const [joint, st] of this.jointStates) {
+      this.jointStates.set(joint, { ...st, status: "closed" });
+    }
+    this.emitJointState();
     this.onStatus(false, "disconnected");
   }
 

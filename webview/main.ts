@@ -127,6 +127,9 @@ function bootstrap(): void {
       case "connectionStatus":
         ui.setConnectionStatus(msg.connected, msg.detail);
         break;
+      case "opcuaJointState":
+        ui.updateOpcuaJointStates(msg.joints);
+        break;
     }
   });
 

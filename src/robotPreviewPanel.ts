@@ -326,7 +326,8 @@ export class RobotPreviewPanel {
       this.opcua = new OpcuaBridge(
         (values) => this.post({ type: "setJoints", values, source: "external" }),
         (connected, detail) =>
-          this.post({ type: "connectionStatus", connected, detail })
+          this.post({ type: "connectionStatus", connected, detail }),
+        (joints) => this.post({ type: "opcuaJointState", joints })
       );
       this.disposables.push({ dispose: () => this.opcua?.dispose() });
     }
