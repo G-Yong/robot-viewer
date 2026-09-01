@@ -4,6 +4,7 @@
   --accent: #4fc3f7;
   --text: #e6edf3;
   --text-dim: #9aa4af;
+  --sidebar-width: 330px;
 }
 
 * {
@@ -31,88 +32,88 @@ body,
   display: block;
 }
 
-/* Toolbar of section buttons ------------------------------------------------ */
-#toolbar {
+/* Docked, collapsible sidebar ---------------------------------------------- */
+#sidebar {
   position: absolute;
-  top: 10px;
-  right: 12px;
-  display: flex;
-  gap: 6px;
-  z-index: 50;
-}
-
-.tool-btn {
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  color: var(--text);
-  border-radius: 6px;
-  padding: 5px 10px;
-  font-size: 12px;
-  cursor: pointer;
-  backdrop-filter: blur(6px);
-}
-
-.tool-btn:hover {
-  border-color: var(--accent);
-}
-
-.tool-btn.active {
-  background: var(--accent);
-  color: #06232e;
-  border-color: var(--accent);
-  font-weight: 600;
-}
-
-/* Floating panels ----------------------------------------------------------- */
-.panel {
-  position: absolute;
-  width: 310px;
-  max-height: 78vh;
+  top: 0;
+  right: 0;
+  height: 100%;
+  width: var(--sidebar-width);
   display: flex;
   flex-direction: column;
   background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 8px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  border-left: 1px solid var(--panel-border);
   backdrop-filter: blur(8px);
-  overflow: hidden;
-  z-index: 10;
+  transition: transform 0.22s ease;
+  z-index: 20;
 }
 
-.panel-header {
+#sidebar.collapsed {
+  transform: translateX(var(--sidebar-width));
+}
+
+/* Pull tab that stays visible when the panel is slid out. */
+#sidebar-handle {
+  position: absolute;
+  top: 50%;
+  left: -26px;
+  transform: translateY(-50%);
+  width: 26px;
+  height: 54px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  cursor: move;
-  user-select: none;
-  background: rgba(255, 255, 255, 0.04);
+  justify-content: center;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-right: none;
+  border-radius: 6px 0 0 6px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+#sidebar-handle:hover {
+  color: var(--accent);
+}
+
+/* Tab bar ------------------------------------------------------------------- */
+#tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 8px 8px 0;
   border-bottom: 1px solid var(--panel-border);
 }
 
-.panel-title {
-  font-weight: 600;
-  font-size: 13px;
-}
-
-.panel-close {
+.tab-btn {
+  flex: 1 1 auto;
   background: transparent;
   border: none;
+  border-bottom: 2px solid transparent;
   color: var(--text-dim);
+  padding: 6px 8px;
+  font-size: 12px;
   cursor: pointer;
-  font-size: 13px;
-  padding: 2px 4px;
-  border-radius: 4px;
+  white-space: nowrap;
 }
 
-.panel-close:hover {
+.tab-btn:hover {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.08);
 }
 
-.panel-body {
-  padding: 10px 12px 14px;
+.tab-btn.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+#tab-content {
+  flex: 1 1 auto;
   overflow-y: auto;
+}
+
+.tab-body {
+  padding: 10px 12px 16px;
   font-size: 12px;
 }
 

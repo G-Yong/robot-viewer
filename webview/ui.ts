@@ -36,16 +36,16 @@ function defaultOpcuaConfig(): OpcuaConfig {
   };
 }
 
-interface Panel {
-  el: HTMLElement;
+interface Tab {
+  btn: HTMLButtonElement;
   body: HTMLElement;
-  button: HTMLButtonElement;
 }
 
 export class UI {
-  private toolbar!: HTMLElement;
-  private panels = new Map<string, Panel>();
-  private zTop = 10;
+  private sidebar!: HTMLElement;
+  private tabbar!: HTMLElement;
+  private tabContent!: HTMLElement;
+  private tabs = new Map<string, Tab>();
 
   private jointBody!: HTMLElement;
   private statusEl!: HTMLElement;
@@ -74,14 +74,30 @@ export class UI {
   }
 
   private build(): void {
-    this.toolbar = el("div", { id: "toolbar" });
-    this.root.appendChild(this.toolbar);
+    this.sidebar = el("div", { id: "sidebar" });
 
-    this.createPanel("joints", "Joints", (b) => this.fillJoints(b), true);
-    this.createPanel("camera", "Camera", (b) => this.fillCamera(b));
-    this.createPanel("render", "Rendering", (b) => this.fillRender(b));
-    this.createPanel("scene", "Scene", (b) => this.fillScene(b));
-    this.createPanel("opcua", "OPC UA", (b) => this.fillOpcua(b));
+    const handle = el("button", { id: "sidebar-handle", title: "Collapse / expand" }, [
+      "▶",
+    ]) as HTMLButtonElement;
+    handle.addEventListener("click", () => {
+      const collapsed = this.sidebar.classList.toggle("collapsed");
+      handle.textContent = collapsed ? "◀" : "▶";
+    });
+    this.sidebar.appendChild(handle);
+
+    this.tabbar = el("div", { id: "tabs" });
+    this.sidebar.appendChild(this.tabbar);
+
+    this.tabContent = el("div", { id: "tab-content" });
+    this.sidebar.appendChild(this.tabContent);
+
+    this.root.appendChild(this.sidebar);
+
+    this.addTab("joints", "Joints", (b) => this.fillJoints(b), true);
+    this.addTab("camera", "Camera", (b) => this.fillCamera(b));
+    this.addTab("render", "Render", (b) => this.fillRender(b));
+    this.addTab("scene", "Scene", (b) => this.fillScene(b));
+    this.addTab("opcua", "OPC UA", (b) => this.fillOpcua(b));
 
     const hint = el("div", { class: "hint" }, [
       "Left-drag: rotate • Right-drag: pan • Wheel: zoom",
@@ -89,90 +105,34 @@ export class UI {
     this.root.appendChild(hint);
   }
 
-  private createPanel(
+  private addTab(
     id: string,
-    title: string,
+    label: string,
     fill: (body: HTMLElement) => void,
-    open = false
+    active = false
   ): void {
-    const button = el("button", { class: "tool-btn" }, [title]) as HTMLButtonElement;
-    this.toolbar.appendChild(button);
+    const btn = el("button", { class: "tab-btn" }, [label]) as HTMLButtonElement;
+    btn.addEventListener("click", () => this.selectTab(id));
+    this.tabbar.appendChild(btn);
 
-    const panel = el("div", { class: "panel" });
-    const close = el("button", { class: "panel-close" }, ["✕"]) as HTMLButtonElement;
-    const header = el("div", { class: "panel-header" }, [
-      el("span", { class: "panel-title" }, [title]),
-      close,
-    ]);
-    const body = el("div", { class: "panel-body" });
-    panel.appendChild(header);
-    panel.appendChild(body);
-    this.root.appendChild(panel);
-
+    const body = el("div", { class: "tab-body" });
+    body.style.display = active ? "block" : "none";
+    btn.classList.toggle("active", active);
     fill(body);
+    this.tabContent.appendChild(body);
 
-    const idx = this.panels.size;
-    panel.style.right = `${12 + idx * 16}px`;
-    panel.style.top = `${52 + idx * 16}px`;
-    panel.style.display = open ? "flex" : "none";
-    button.classList.toggle("active", open);
-
-    const toggle = () => {
-      const show = panel.style.display === "none";
-      panel.style.display = show ? "flex" : "none";
-      button.classList.toggle("active", show);
-      if (show) {
-        this.bringToFront(panel);
-      }
-    };
-    button.addEventListener("click", toggle);
-    close.addEventListener("click", () => {
-      panel.style.display = "none";
-      button.classList.remove("active");
-    });
-
-    this.makeDraggable(panel, header, close);
-    this.panels.set(id, { el: panel, body, button });
+    this.tabs.set(id, { btn, body });
   }
 
-  private bringToFront(panel: HTMLElement): void {
-    panel.style.zIndex = String(++this.zTop);
+  private selectTab(id: string): void {
+    for (const [key, tab] of this.tabs) {
+      const on = key === id;
+      tab.body.style.display = on ? "block" : "none";
+      tab.btn.classList.toggle("active", on);
+    }
   }
 
-  private makeDraggable(
-    panel: HTMLElement,
-    handle: HTMLElement,
-    ignore: HTMLElement
-  ): void {
-    handle.addEventListener("pointerdown", (e: PointerEvent) => {
-      if (e.target === ignore) {
-        return;
-      }
-      const rect = panel.getBoundingClientRect();
-      // Switch from right-anchored to left/top so dragging is absolute.
-      panel.style.left = `${rect.left}px`;
-      panel.style.top = `${rect.top}px`;
-      panel.style.right = "auto";
-      this.bringToFront(panel);
-      const offsetX = e.clientX - rect.left;
-      const offsetY = e.clientY - rect.top;
-
-      const move = (ev: PointerEvent) => {
-        const x = clamp(ev.clientX - offsetX, 0, window.innerWidth - 60);
-        const y = clamp(ev.clientY - offsetY, 0, window.innerHeight - 30);
-        panel.style.left = `${x}px`;
-        panel.style.top = `${y}px`;
-      };
-      const up = () => {
-        window.removeEventListener("pointermove", move);
-        window.removeEventListener("pointerup", up);
-      };
-      window.addEventListener("pointermove", move);
-      window.addEventListener("pointerup", up);
-    });
-  }
-
-  // Sub-section (collapsible) used inside the OPC UA panel.
+  // Sub-section (collapsible) used inside the OPC UA tab.
   private section(title: string, collapsed = false): {
     section: HTMLElement;
     body: HTMLElement;
@@ -186,7 +146,7 @@ export class UI {
     return { section, body };
   }
 
-  // ---- Joints panel ---------------------------------------------------------
+  // ---- Joints tab -----------------------------------------------------------
   private fillJoints(body: HTMLElement): void {
     this.jointBody = body;
     body.appendChild(el("div", { class: "empty" }, ["No model loaded."]));
@@ -256,14 +216,14 @@ export class UI {
     }
   }
 
-  // ---- Camera panel ---------------------------------------------------------
+  // ---- Camera tab -----------------------------------------------------------
   private fillCamera(body: HTMLElement): void {
     const reset = el("button", { class: "action secondary" }, ["Reset / Fit View"]);
     reset.addEventListener("click", () => this.cb.onResetCamera());
     body.appendChild(el("div", { class: "row" }, [reset]));
   }
 
-  // ---- Rendering panel ------------------------------------------------------
+  // ---- Rendering tab --------------------------------------------------------
   private fillRender(body: HTMLElement): void {
     const s = this.viewer.getSettings();
 
@@ -311,7 +271,7 @@ export class UI {
     body.appendChild(el("div", { class: "row" }, [el("label", {}, ["Up axis"]), up]));
   }
 
-  // ---- Scene panel ----------------------------------------------------------
+  // ---- Scene tab ------------------------------------------------------------
   private fillScene(body: HTMLElement): void {
     const save = el("button", { class: "action" }, ["Save"]);
     const load = el("button", { class: "action secondary" }, ["Load"]);
@@ -324,7 +284,7 @@ export class UI {
     body.appendChild(el("div", { class: "row" }, [resetJoints]));
   }
 
-  // ---- OPC UA panel ---------------------------------------------------------
+  // ---- OPC UA tab -----------------------------------------------------------
   private fillOpcua(body: HTMLElement): void {
     body.appendChild(this.opcuaConnectionSection());
     body.appendChild(this.opcuaSecuritySection());
@@ -732,8 +692,4 @@ function option(value: string, label: string, selected: boolean): HTMLElement {
   const o = el("option", { value }, [label]) as HTMLOptionElement;
   o.selected = selected;
   return o;
-}
-
-function clamp(v: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, v));
 }

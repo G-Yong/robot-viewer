@@ -11,7 +11,7 @@ A VS Code extension for importing and visualizing robot models (URDF / Xacro) di
 - **Joint control** — A slider per movable joint with live value readout (degrees for revolute/continuous, meters for prismatic).
 - **Rendering settings** — Background color, ground grid, ambient/key light intensity, visual/collision geometry toggles, wireframe, and up-axis (`+Z` URDF convention or `+Y`).
 - **Scene save/load** — Persist joint values, camera pose and render settings to a `*.robotscene.json` file and restore them later.
-- **Floating panels** — A toolbar (Joints, Camera, Rendering, Scene, OPC UA) opens each control set as its own draggable, closable window instead of one long sidebar.
+- **Collapsible tabbed panel** — A docked side panel with tabs (Joints, Camera, Render, Scene, OPC UA) that can be slid out or collapsed with the edge handle.
 - **Live sync (OPC UA)** — A six-part configuration panel (Connection, Security, Address Space, Variable Naming, Joint Mapping, Runtime) subscribes to a NodeId per joint and mirrors external joint states into the viewer in real time.
 - **Package resolution** — Resolve `package://<pkg>/...` mesh references via the `robotViewer.packages` setting. The model's own directory and its parent are always searched too, so meshes resolve even when the `package://` name doesn't match a real folder.
 
