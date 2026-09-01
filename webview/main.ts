@@ -32,6 +32,11 @@ function bootstrap(): void {
   const viewer = new Viewer(canvas);
   let currentFileName = "";
 
+  const saveScene = (): void => {
+    const scene: SceneConfig = buildScene();
+    post({ type: "saveScene", scene });
+  };
+
   const ui = new UI(app, viewer, {
     onJointInput: (name, value) => {
       viewer.setJoint(name, value);
@@ -49,10 +54,7 @@ function bootstrap(): void {
       viewer.setJoints(zeros);
       ui.updateJointValues(zeros);
     },
-    onSaveScene: () => {
-      const scene: SceneConfig = buildScene();
-      post({ type: "saveScene", scene });
-    },
+    onSaveScene: saveScene,
     onLoadScene: () => {
       post({ type: "requestLoadScene" });
     },
@@ -130,6 +132,15 @@ function bootstrap(): void {
       case "opcuaJointState":
         ui.updateOpcuaJointStates(msg.joints);
         break;
+    }
+  });
+
+  // Ctrl+S / Cmd+S saves the current scene, same as the Scene tab's Save
+  // button. preventDefault stops the browser's native "save page" dialog.
+  document.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && (e.key === "s" || e.key === "S")) {
+      e.preventDefault();
+      saveScene();
     }
   });
 
