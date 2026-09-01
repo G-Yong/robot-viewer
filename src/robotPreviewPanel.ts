@@ -276,7 +276,7 @@ export class RobotPreviewPanel {
       wireframe: false,
       colorMode: "original",
       showOriginAxes: true,
-      showJointAxes: true,
+      showJointAxes: false,
       showViewGizmo: true,
       axisSize: 0.25,
     };

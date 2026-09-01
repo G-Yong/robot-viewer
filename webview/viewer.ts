@@ -36,7 +36,7 @@ export class Viewer {
     wireframe: false,
     colorMode: "original",
     showOriginAxes: true,
-    showJointAxes: true,
+    showJointAxes: false,
     showViewGizmo: true,
     axisSize: 0.25,
   };
@@ -48,6 +48,7 @@ export class Viewer {
   private linkIndex = new Map<string, number>();
 
   private originAxes?: THREE.Group;
+  private originLabels: THREE.Sprite[] = [];
   private jointAxisGroups: THREE.Group[] = [];
   private readonly axesParent = new THREE.Group();
 
@@ -130,11 +131,28 @@ export class Viewer {
     const delta = this.clock.getDelta();
     this.gizmo.update(delta);
     this.controls.update();
+    this.updateLabelScales();
     this.renderer.render(this.scene, this.camera);
     if (this.settings.showViewGizmo) {
       this.gizmo.render(this.renderer);
     }
   };
+
+  /** Keep the origin X/Y/Z labels a constant on-screen size at any zoom. */
+  private updateLabelScales(): void {
+    if (this.originLabels.length === 0) {
+      return;
+    }
+    const vFov = (this.camera.fov * Math.PI) / 180;
+    // ~4.5% of the viewport height, independent of camera distance.
+    const factor = 2 * Math.tan(vFov / 2) * 0.045;
+    const wp = new THREE.Vector3();
+    for (const sprite of this.originLabels) {
+      sprite.getWorldPosition(wp);
+      const dist = this.camera.position.distanceTo(wp);
+      sprite.scale.setScalar(Math.max(1e-4, dist * factor));
+    }
+  }
 
   loadModel(urdfContent: string): JointInfo[] {
     if (this.robot) {
@@ -192,6 +210,14 @@ export class Viewer {
     this.originAxes = this.buildAxisFrame(s, { labels: true });
     this.axesParent.add(this.originAxes);
     this.axesParent.rotation.x = this.upAxis === "+Z" ? -Math.PI / 2 : 0;
+
+    // Collect the origin labels so they can be kept at a constant screen size.
+    this.originLabels = [];
+    this.originAxes.traverse((o) => {
+      if ((o as THREE.Sprite).isSprite) {
+        this.originLabels.push(o as THREE.Sprite);
+      }
+    });
 
     // One frame per movable joint.
     for (const name of Object.keys(this.robot.joints ?? {})) {

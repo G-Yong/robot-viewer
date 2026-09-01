@@ -12,7 +12,7 @@ export interface GizmoControls {
  */
 export class ViewGizmo {
   private readonly gizmoScene = new THREE.Scene();
-  private readonly gizmoCamera = new THREE.OrthographicCamera(-2, 2, 2, -2, 0, 4);
+  private readonly gizmoCamera = new THREE.OrthographicCamera(-1.45, 1.45, 1.45, -1.45, 0, 4);
   private readonly root = new THREE.Object3D();
   private readonly interactive: THREE.Sprite[] = [];
   private readonly raycaster = new THREE.Raycaster();
@@ -27,7 +27,7 @@ export class ViewGizmo {
   private animT = 0;
   private readonly animDuration = 0.35;
 
-  readonly dim = 112;
+  readonly dim = 120;
   readonly margin = 12;
 
   constructor(
@@ -70,7 +70,7 @@ export class ViewGizmo {
 
       const pos = new THREE.Sprite(this.spriteMat(color, label));
       pos.position.copy(dir);
-      pos.scale.setScalar(0.5);
+      pos.scale.setScalar(0.62);
       pos.userData.dir = dir.clone();
       this.root.add(pos);
       this.interactive.push(pos);
@@ -78,7 +78,7 @@ export class ViewGizmo {
 
       const neg = new THREE.Sprite(this.spriteMat(color, null));
       neg.position.copy(dir.clone().multiplyScalar(-1));
-      neg.scale.setScalar(0.36);
+      neg.scale.setScalar(0.44);
       neg.userData.dir = dir.clone().multiplyScalar(-1);
       (neg.material as THREE.SpriteMaterial).opacity = 0.5;
       this.root.add(neg);
@@ -89,20 +89,20 @@ export class ViewGizmo {
 
   private spriteMat(color: number, text: string | null): THREE.SpriteMaterial {
     const canvas = document.createElement("canvas");
-    canvas.width = 64;
-    canvas.height = 64;
+    canvas.width = 72;
+    canvas.height = 72;
     const ctx = canvas.getContext("2d")!;
     ctx.beginPath();
-    ctx.arc(32, 32, 18, 0, 2 * Math.PI);
+    ctx.arc(36, 36, 24, 0, 2 * Math.PI);
     ctx.closePath();
     ctx.fillStyle = `#${new THREE.Color(color).getHexString()}`;
     ctx.fill();
     if (text) {
-      ctx.font = "bold 34px Arial";
+      ctx.font = "bold 46px Arial";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillStyle = "#ffffff";
-      ctx.fillText(text, 32, 34);
+      ctx.fillText(text, 36, 38);
     }
     const tex = new THREE.CanvasTexture(canvas);
     return new THREE.SpriteMaterial({
