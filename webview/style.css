@@ -1,0 +1,277 @@
+:root {
+  --panel-bg: rgba(30, 34, 40, 0.92);
+  --panel-border: rgba(255, 255, 255, 0.08);
+  --accent: #4fc3f7;
+  --text: #e6edf3;
+  --text-dim: #9aa4af;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--vscode-font-family, "Segoe UI", sans-serif);
+  color: var(--text);
+}
+
+#viewer-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+#sidebar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 300px;
+  height: 100%;
+  background: var(--panel-bg);
+  border-left: 1px solid var(--panel-border);
+  backdrop-filter: blur(6px);
+  overflow-y: auto;
+  font-size: 12px;
+  transition: transform 0.2s ease;
+}
+
+#sidebar.collapsed {
+  transform: translateX(300px);
+}
+
+#sidebar-toggle {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.section {
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.section > .section-header {
+  padding: 8px 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  user-select: none;
+}
+
+.section > .section-header:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.section-body {
+  padding: 8px 12px 12px;
+}
+
+.section.collapsed .section-body {
+  display: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.row label {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+}
+
+.joint-row {
+  margin: 10px 0;
+}
+
+.joint-row .joint-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 2px;
+}
+
+.joint-row .joint-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.joint-row .joint-value {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+button.action {
+  background: var(--accent);
+  color: #06232e;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-weight: 600;
+  flex: 1;
+}
+
+button.action.secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+}
+
+button.action:hover {
+  filter: brightness(1.1);
+}
+
+input[type="color"] {
+  width: 32px;
+  height: 22px;
+  border: none;
+  background: none;
+  padding: 0;
+}
+
+.status {
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.status .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  background: #ef5350;
+  vertical-align: middle;
+}
+
+.status.connected .dot {
+  background: #66bb6a;
+}
+
+.hint {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  color: var(--text-dim);
+  font-size: 11px;
+  background: var(--panel-bg);
+  padding: 4px 8px;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.empty {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.field > label {
+  flex: 0 0 40%;
+  color: var(--text-dim);
+}
+
+.field input,
+.field select {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 12px;
+}
+
+.note {
+  color: var(--text-dim);
+  font-size: 10px;
+  margin: 2px 0 6px;
+  line-height: 1.4;
+}
+
+/* Nested OPC UA sub-sections are more compact than top-level ones. */
+.section .section .section-header {
+  padding: 6px 10px;
+  font-weight: 500;
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.section .section .section-body {
+  padding: 6px 10px 10px;
+}
+
+.mapping {
+  font-size: 11px;
+}
+
+.map-head,
+.map-row {
+  display: grid;
+  grid-template-columns: 20px 1fr 1.4fr 48px 48px;
+  gap: 4px;
+  align-items: center;
+}
+
+.map-head {
+  color: var(--text-dim);
+  margin-bottom: 4px;
+  font-size: 10px;
+}
+
+.map-row {
+  margin: 3px 0;
+}
+
+.map-joint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-id,
+.map-num {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  border-radius: 3px;
+  padding: 2px 4px;
+  font-size: 11px;
+  min-width: 0;
+  width: 100%;
+}
+

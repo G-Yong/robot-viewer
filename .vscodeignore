@@ -1,0 +1,10 @@
+.vscode/**
+src/**
+webview/**
+esbuild.js
+tsconfig.json
+**/*.map
+**/*.ts
+.gitignore
+计划.md
+samples/**
