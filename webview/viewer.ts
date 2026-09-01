@@ -252,11 +252,12 @@ export class Viewer {
       ]);
       const mat = new THREE.LineBasicMaterial({
         color,
-        // Lines drawn last so they read on top of the geometry.
-        depthTest: !opts.labels,
+        // Depth-test the axis lines so scene geometry occludes them. The
+        // origin labels stay readable on top via their own depthTest:false
+        // sprites.
+        depthTest: true,
       });
       const line = new THREE.Line(geom, mat);
-      line.renderOrder = 999;
       group.add(line);
       if (opts.labels) {
         // Per-frame rescaled to a constant screen size; kept near the origin.
@@ -500,6 +501,7 @@ export class Viewer {
   }
 
   applySettings(s: ViewerSettings): void {
+    const prevAxisSize = this.settings.axisSize;
     this.settings = { ...this.settings, ...s };
     this.scene.background = new THREE.Color(this.settings.backgroundColor);
     this.ambient.intensity = this.settings.ambientIntensity;
@@ -509,6 +511,11 @@ export class Viewer {
       this.upAxis = this.settings.upAxis;
       this.applyUpAxis();
       this.fitCamera();
+    }
+    if (prevAxisSize !== this.settings.axisSize) {
+      // The axis-size slider changes the line length of the origin/joint
+      // frames, so rebuild them with the new base size.
+      this.buildAxes();
     }
     this.applyMeshSettings();
     this.applyAxisVisibility();
