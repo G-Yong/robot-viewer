@@ -114,6 +114,9 @@ export class RobotPreviewPanel {
       case "sceneSnapshot":
         await this.saveScene(msg.scene);
         break;
+      case "requestLoadScene":
+        await this.loadSceneFromDialog();
+        break;
       case "log":
         this.log(msg.level, msg.message);
         break;

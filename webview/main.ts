@@ -54,9 +54,7 @@ function bootstrap(): void {
       post({ type: "saveScene", scene });
     },
     onLoadScene: () => {
-      // Delegates to the extension command palette flow.
-      post({ type: "log", level: "info", message: "load-scene requested" });
-      // The extension exposes 'Robot Viewer: Load Scene Configuration...'.
+      post({ type: "requestLoadScene" });
     },
     onToggleOpcua: () => {
       if (ui.isOpcuaConnected()) {
@@ -86,6 +84,8 @@ function bootstrap(): void {
       joints: viewer.getJointValues(),
       camera: viewer.getCameraState(),
       settings: viewer.getSettings(),
+      // Password is intentionally cleared so it is not written to the file.
+      opcua: { ...ui.getOpcuaConfig(), password: "" },
     };
   }
 
@@ -117,6 +117,9 @@ function bootstrap(): void {
       case "loadScene":
         viewer.applyScene(msg.scene);
         ui.updateJointValues(msg.scene.joints ?? {});
+        if (msg.scene.opcua) {
+          ui.applyOpcuaConfig(msg.scene.opcua);
+        }
         break;
       case "requestScene":
         post({ type: "sceneSnapshot", scene: buildScene() });

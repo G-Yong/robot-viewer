@@ -190,8 +190,9 @@ export class Viewer {
     this.camera.updateProjectionMatrix();
     this.controls.update();
 
-    // Place the grid at the base of the model.
-    this.grid.position.y = box.min.y;
+    // Keep the grid at the world origin so the model's real height above the
+    // ground plane (e.g. a base mounted 1 m up) is shown faithfully.
+    this.grid.position.y = 0;
     this.directional.shadow.camera.far = maxDim * 20;
   }
 

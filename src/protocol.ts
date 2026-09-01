@@ -36,6 +36,7 @@ export type WebviewToHost =
   | { type: "jointChanged"; values: JointValues; source: "user" }
   | { type: "saveScene"; scene: SceneConfig }
   | { type: "sceneSnapshot"; scene: SceneConfig }
+  | { type: "requestLoadScene" }
   | { type: "log"; level: "info" | "warn" | "error"; message: string }
   | { type: "connectOpcua"; config: OpcuaConfig }
   | { type: "disconnectOpcua" };
@@ -95,4 +96,6 @@ export interface SceneConfig {
     target: [number, number, number];
   };
   settings?: Partial<ViewerSettings>;
+  /** OPC UA configuration; password is never written to the scene file. */
+  opcua?: OpcuaConfig;
 }
