@@ -1,6 +1,5 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { ViewHelper } from "three/examples/jsm/helpers/ViewHelper.js";
 import URDFLoader from "urdf-loader";
 import type { URDFRobot, URDFJoint } from "urdf-loader";
 import { loadMesh } from "./meshLoader";
@@ -50,8 +49,11 @@ export class Viewer {
   private originAxes?: THREE.Group;
   private jointAxisGroups: THREE.Group[] = [];
   private readonly axesParent = new THREE.Group();
-  private viewHelper!: ViewHelper;
-  private readonly clock = new THREE.Clock();
+
+  // Corner orientation gizmo: a tiny line-axes scene drawn top-left every frame.
+  private readonly gizmoScene = new THREE.Scene();
+  private readonly gizmoCamera = new THREE.OrthographicCamera(-1.6, 1.6, 1.6, -1.6, 0, 4);
+  private gizmoAxes!: THREE.Group;
 
   onJointChange?: (values: JointValues) => void;
 
@@ -94,16 +96,7 @@ export class Viewer {
     this.scene.add(this.axesParent);
     this.scene.add(this.robotRoot);
 
-    // Blender-style corner orientation gizmo. It tracks the camera, is
-    // clickable to snap to axis views, and keeps its own real-space geometry.
-    this.viewHelper = new ViewHelper(this.camera, this.canvas);
-    this.viewHelper.center.set(0, 0, 0);
-    this.canvas.addEventListener("pointerdown", (e) => {
-      if (this.settings.showViewGizmo && this.viewHelper.handleClick(e)) {
-        e.stopPropagation();
-        e.preventDefault();
-      }
-    });
+    this.buildGizmo();
 
     window.addEventListener("resize", () => this.resize());
     // The webview panel can resize without a window 'resize' event.
@@ -127,10 +120,36 @@ export class Viewer {
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
     if (this.settings.showViewGizmo) {
-      this.viewHelper.render(this.renderer);
-      this.viewHelper.update(this.clock.getDelta());
+      this.renderGizmo();
     }
   };
+
+  /** Build the corner orientation gizmo (colored lines + X/Y/Z labels). */
+  private buildGizmo(): void {
+    this.gizmoCamera.position.set(0, 0, 2);
+    this.gizmoAxes = this.buildAxisFrame(1, { labels: true, lineWidth: true });
+    this.gizmoScene.add(this.gizmoAxes);
+  }
+
+  /** Draw the gizmo into a small top-left viewport, oriented like the camera. */
+  private renderGizmo(): void {
+    const dim = 90;
+    const margin = 10;
+    const size = this.renderer.getSize(new THREE.Vector2());
+    // The gizmo axes mirror the camera orientation (like a nav cube).
+    this.gizmoAxes.quaternion.copy(this.camera.quaternion).invert();
+
+    const prev = this.renderer.getViewport(new THREE.Vector4());
+    this.renderer.clearDepth();
+    this.renderer.setScissorTest(true);
+    // WebGL viewport origin is bottom-left, so top-left => y = height - dim.
+    const y = size.y - dim - margin;
+    this.renderer.setViewport(margin, y, dim, dim);
+    this.renderer.setScissor(margin, y, dim, dim);
+    this.renderer.render(this.gizmoScene, this.gizmoCamera);
+    this.renderer.setScissorTest(false);
+    this.renderer.setViewport(prev.x, prev.y, prev.z, prev.w);
+  }
 
   loadModel(urdfContent: string): JointInfo[] {
     if (this.robot) {
@@ -202,8 +221,11 @@ export class Viewer {
     this.applyAxisVisibility();
   }
 
-  /** A colored arrow frame (X=red, Y=green, Z=blue) with optional labels. */
-  private buildAxisFrame(size: number, opts: { labels: boolean }): THREE.Group {
+  /** A colored line frame (X=red, Y=green, Z=blue) with optional labels. */
+  private buildAxisFrame(
+    size: number,
+    opts: { labels: boolean; lineWidth?: boolean }
+  ): THREE.Group {
     const group = new THREE.Group();
     const axes: [THREE.Vector3, number, string][] = [
       [new THREE.Vector3(1, 0, 0), 0xff4466, "X"],
@@ -211,15 +233,18 @@ export class Viewer {
       [new THREE.Vector3(0, 0, 1), 0x4488ff, "Z"],
     ];
     for (const [dir, color, label] of axes) {
-      const arrow = new THREE.ArrowHelper(
-        dir,
-        new THREE.Vector3(),
-        size,
+      const geom = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0),
+        dir.clone().multiplyScalar(size),
+      ]);
+      const mat = new THREE.LineBasicMaterial({
         color,
-        size * 0.2,
-        size * 0.1
-      );
-      group.add(arrow);
+        // Lines drawn last so they read on top of the geometry.
+        depthTest: !opts.labels,
+      });
+      const line = new THREE.Line(geom, mat);
+      line.renderOrder = 999;
+      group.add(line);
       if (opts.labels) {
         const sprite = this.makeLabelSprite(label, color);
         sprite.position.copy(dir.clone().multiplyScalar(size * 1.18));
@@ -276,9 +301,6 @@ export class Viewer {
     }
     for (const axes of this.jointAxisGroups) {
       axes.visible = this.settings.showJointAxes;
-    }
-    if (this.viewHelper) {
-      this.viewHelper.visible = this.settings.showViewGizmo;
     }
   }
 
@@ -409,9 +431,6 @@ export class Viewer {
     // ground plane (e.g. a base mounted 1 m up) is shown faithfully.
     this.grid.position.y = 0;
     this.directional.shadow.camera.far = maxDim * 20;
-
-    // Keep the gizmo snapping around the model center.
-    this.viewHelper.center.copy(center);
 
     // Re-size the axes after the model's true bounds are known.
     this.buildAxes();
