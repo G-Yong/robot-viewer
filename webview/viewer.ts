@@ -33,7 +33,17 @@ export class Viewer {
     showVisual: true,
     showCollision: false,
     wireframe: false,
+    colorMode: "original",
   };
+
+  // Distinct vivid colors cycled per link in "alternate" mode, so adjacent
+  // links are easy to tell apart regardless of the URDF's own material colors.
+  private static readonly PALETTE = [
+    0xff5252, 0xff9800, 0xffeb3b, 0x4caf50, 0x00bcd4, 0x2196f3,
+    0x3f51b5, 0x9c27b0, 0xe91e63, 0x8bc34a, 0x009688, 0x795548,
+    0xff4081, 0x607d8b, 0x7c4dff, 0xff6d00,
+  ];
+  private linkIndex = new Map<string, number>();
 
   onJointChange?: (values: JointValues) => void;
 
@@ -146,6 +156,11 @@ export class Viewer {
     if (!this.robot) {
       return;
     }
+    // Build a stable per-link index used to pick the alternate palette color.
+    const links = this.robot.links ?? {};
+    this.linkIndex.clear();
+    Object.keys(links).forEach((name, i) => this.linkIndex.set(name, i));
+
     this.robot.traverse((child: any) => {
       if (child.isURDFCollider) {
         child.visible = this.settings.showCollision;
@@ -153,21 +168,76 @@ export class Viewer {
         child.visible = this.settings.showVisual;
       }
       if (child.isMesh && child.material) {
-        const mats = Array.isArray(child.material) ? child.material : [child.material];
-        for (const m of mats) {
-          if ("wireframe" in m) {
-            m.wireframe = this.settings.wireframe;
-          }
-          if (child.parent && child.parent.isURDFCollider) {
-            m.color?.set(0x00e5ff);
-            m.transparent = true;
-            m.opacity = 0.4;
-          }
-        }
+        this.applyMeshMaterial(child);
         child.castShadow = true;
         child.receiveShadow = true;
       }
     });
+  }
+
+  /** Assign/restore a visual mesh's material depending on colorMode. */
+  private applyMeshMaterial(mesh: any): void {
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    const altColor = this.paletteColorFor(mesh);
+
+    // Snapshot the original color/opacity once so "original" mode can restore
+    // them even after we mutated the material in place (materials can be shared).
+    if (!mesh.userData.__origColorState) {
+      mesh.userData.__origColorState = mats.map(
+        (m: any) =>
+          m && typeof m.color?.clone === "function"
+            ? { color: m.color.clone(), opacity: m.opacity, transparent: m.transparent }
+            : null
+      );
+    }
+    const origState = mesh.userData.__origColorState as {
+      color: THREE.Color;
+      opacity: number;
+      transparent: boolean;
+    }[];
+
+    mats.forEach((m: any, i: number) => {
+      if (!m || typeof m.color?.set !== "function") {
+        return; // e.g. a plain material without a color channel
+      }
+
+      if (this.settings.colorMode === "alternate" && altColor) {
+        m.color.set(altColor);
+        if (m.transparent) {
+          m.opacity = 1;
+          m.transparent = false;
+        }
+      } else {
+        const orig = origState[i];
+        if (orig) {
+          m.color.copy(orig.color);
+          m.opacity = orig.opacity;
+          m.transparent = orig.transparent;
+        }
+      }
+
+      if ("wireframe" in m) {
+        m.wireframe = this.settings.wireframe;
+      }
+      if (mesh.parent && mesh.parent.isURDFCollider) {
+        m.color.set(0x00e5ff);
+        m.transparent = true;
+        m.opacity = 0.4;
+      }
+    });
+  }
+
+  /** Palette color for the link that owns this mesh, or undefined. */
+  private paletteColorFor(mesh: any): number | undefined {
+    let node: any = mesh;
+    while (node) {
+      if (node.isURDFLink && node.urdfName) {
+        const idx = this.linkIndex.get(node.urdfName) ?? 0;
+        return Viewer.PALETTE[idx % Viewer.PALETTE.length];
+      }
+      node = node.parent;
+    }
+    return undefined;
   }
 
   private fitCamera(): void {

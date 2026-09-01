@@ -263,6 +263,15 @@ export class UI {
       this.cb.onSettingsChange({ upAxis: up.value as "+Z" | "+Y" })
     );
     body.appendChild(el("div", { class: "row" }, [el("label", {}, ["Up axis"]), up]));
+
+    const colorMode = el("select", {}, [
+      option("original", "Original (URDF material)", s.colorMode === "original"),
+      option("alternate", "Alternate (distinct per link)", s.colorMode === "alternate"),
+    ]) as HTMLSelectElement;
+    colorMode.addEventListener("change", () =>
+      this.cb.onSettingsChange({ colorMode: colorMode.value as "original" | "alternate" })
+    );
+    body.appendChild(el("div", { class: "row" }, [el("label", {}, ["Color mode"]), colorMode]));
   }
 
   // ---- Scene tab ------------------------------------------------------------

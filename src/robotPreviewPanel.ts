@@ -274,6 +274,7 @@ export class RobotPreviewPanel {
       showVisual: true,
       showCollision: false,
       wireframe: false,
+      colorMode: "original",
     };
   }
 

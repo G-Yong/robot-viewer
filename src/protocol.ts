@@ -50,6 +50,8 @@ export interface ViewerSettings {
   showVisual: boolean;
   showCollision: boolean;
   wireframe: boolean;
+  /** "original" uses the URDF/material colors; "alternate" gives each link a distinct palette color. */
+  colorMode: "original" | "alternate";
 }
 
 /** Per-joint OPC UA node binding. */
