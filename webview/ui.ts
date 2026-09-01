@@ -284,6 +284,11 @@ export class UI {
       )
     );
     body.appendChild(
+      this.checkbox("View gizmo", s.showViewGizmo, (v) =>
+        this.cb.onSettingsChange({ showViewGizmo: v })
+      )
+    );
+    body.appendChild(
       this.sliderRow("Axis size", 0.05, 1, s.axisSize, (v) =>
         this.cb.onSettingsChange({ axisSize: v })
       )

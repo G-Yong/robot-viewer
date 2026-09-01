@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { ViewHelper } from "three/examples/jsm/helpers/ViewHelper.js";
 import URDFLoader from "urdf-loader";
 import type { URDFRobot, URDFJoint } from "urdf-loader";
 import { loadMesh } from "./meshLoader";
@@ -36,6 +37,7 @@ export class Viewer {
     colorMode: "original",
     showOriginAxes: true,
     showJointAxes: true,
+    showViewGizmo: true,
     axisSize: 0.25,
   };
 
@@ -45,9 +47,11 @@ export class Viewer {
   private static readonly GOLDEN_ANGLE = 137.508;
   private linkIndex = new Map<string, number>();
 
-  private originAxes?: THREE.AxesHelper;
-  private jointAxes = new Set<THREE.AxesHelper>();
-  private axesParent = new THREE.Group();
+  private originAxes?: THREE.Group;
+  private jointAxisGroups: THREE.Group[] = [];
+  private readonly axesParent = new THREE.Group();
+  private viewHelper!: ViewHelper;
+  private readonly clock = new THREE.Clock();
 
   onJointChange?: (values: JointValues) => void;
 
@@ -90,6 +94,17 @@ export class Viewer {
     this.scene.add(this.axesParent);
     this.scene.add(this.robotRoot);
 
+    // Blender-style corner orientation gizmo. It tracks the camera, is
+    // clickable to snap to axis views, and keeps its own real-space geometry.
+    this.viewHelper = new ViewHelper(this.camera, this.canvas);
+    this.viewHelper.center.set(0, 0, 0);
+    this.canvas.addEventListener("pointerdown", (e) => {
+      if (this.settings.showViewGizmo && this.viewHelper.handleClick(e)) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    });
+
     window.addEventListener("resize", () => this.resize());
     // The webview panel can resize without a window 'resize' event.
     new ResizeObserver(() => this.resize()).observe(document.body);
@@ -111,6 +126,10 @@ export class Viewer {
     requestAnimationFrame(this.animate);
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
+    if (this.settings.showViewGizmo) {
+      this.viewHelper.render(this.renderer);
+      this.viewHelper.update(this.clock.getDelta());
+    }
   };
 
   loadModel(urdfContent: string): JointInfo[] {
@@ -152,20 +171,23 @@ export class Viewer {
 
   /** Create world-origin and per-joint axes sized to the model. */
   private buildAxes(size?: number): void {
-    // Remove any previously built axes (clears children of the group too).
+    // Remove any previously built frames (and their labels).
     for (const child of [...this.axesParent.children]) {
       this.axesParent.remove(child);
+      disposeObject(child);
     }
-    this.jointAxes.clear();
+    this.disposeJointAxes();
 
     if (!this.robot) {
       return;
     }
     const s = size ?? this.axisLength();
 
-    // Origin frame (in the model's base frame, rotates with robotRoot).
-    this.originAxes = new THREE.AxesHelper(s);
+    // Origin frame, presented in the asset's coordinate frame (rotates with
+    // the model) so it reads as X/Y/Z in the model's up-axis.
+    this.originAxes = this.buildAxisFrame(s, { labels: true });
     this.axesParent.add(this.originAxes);
+    this.axesParent.rotation.x = this.upAxis === "+Z" ? -Math.PI / 2 : 0;
 
     // One frame per movable joint.
     for (const name of Object.keys(this.robot.joints ?? {})) {
@@ -173,11 +195,68 @@ export class Viewer {
       if (!joint || joint.jointType === "fixed") {
         continue;
       }
-      const axes = new THREE.AxesHelper(s * 0.8);
+      const axes = this.buildAxisFrame(s * 0.6, { labels: false });
       joint.add(axes);
-      this.jointAxes.add(axes);
+      this.jointAxisGroups.push(axes);
     }
     this.applyAxisVisibility();
+  }
+
+  /** A colored arrow frame (X=red, Y=green, Z=blue) with optional labels. */
+  private buildAxisFrame(size: number, opts: { labels: boolean }): THREE.Group {
+    const group = new THREE.Group();
+    const axes: [THREE.Vector3, number, string][] = [
+      [new THREE.Vector3(1, 0, 0), 0xff4466, "X"],
+      [new THREE.Vector3(0, 1, 0), 0x88ff44, "Y"],
+      [new THREE.Vector3(0, 0, 1), 0x4488ff, "Z"],
+    ];
+    for (const [dir, color, label] of axes) {
+      const arrow = new THREE.ArrowHelper(
+        dir,
+        new THREE.Vector3(),
+        size,
+        color,
+        size * 0.2,
+        size * 0.1
+      );
+      group.add(arrow);
+      if (opts.labels) {
+        const sprite = this.makeLabelSprite(label, color);
+        sprite.position.copy(dir.clone().multiplyScalar(size * 1.18));
+        group.add(sprite);
+      }
+    }
+    return group;
+  }
+
+  private makeLabelSprite(text: string, color: number): THREE.Sprite {
+    const canvas = document.createElement("canvas");
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext("2d")!;
+    ctx.font = "bold 44px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = `#${new THREE.Color(color).getHexString()}`;
+    ctx.fillText(text, 32, 32);
+    const tex = new THREE.CanvasTexture(canvas);
+    const mat = new THREE.SpriteMaterial({
+      map: tex,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.setScalar(0.6);
+    return sprite;
+  }
+
+  private disposeJointAxes(): void {
+    for (const g of this.jointAxisGroups) {
+      g.parent?.remove(g);
+      disposeObject(g);
+    }
+    this.jointAxisGroups = [];
   }
 
   /** Axes length derived from the model bounding box. */
@@ -195,8 +274,11 @@ export class Viewer {
     if (this.originAxes) {
       this.originAxes.visible = this.settings.showOriginAxes;
     }
-    for (const axes of this.jointAxes) {
+    for (const axes of this.jointAxisGroups) {
       axes.visible = this.settings.showJointAxes;
+    }
+    if (this.viewHelper) {
+      this.viewHelper.visible = this.settings.showViewGizmo;
     }
   }
 
@@ -206,6 +288,8 @@ export class Viewer {
       // URDF is Z-up; rotate to the viewer's Y-up world.
       this.robotRoot.rotation.x = -Math.PI / 2;
     }
+    // Keep the origin frame in the asset's coordinate frame.
+    this.axesParent.rotation.x = this.upAxis === "+Z" ? -Math.PI / 2 : 0;
   }
 
   private applyMeshSettings(): void {
@@ -325,6 +409,9 @@ export class Viewer {
     // ground plane (e.g. a base mounted 1 m up) is shown faithfully.
     this.grid.position.y = 0;
     this.directional.shadow.camera.far = maxDim * 20;
+
+    // Keep the gizmo snapping around the model center.
+    this.viewHelper.center.copy(center);
 
     // Re-size the axes after the model's true bounds are known.
     this.buildAxes();

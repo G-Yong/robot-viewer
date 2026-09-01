@@ -56,6 +56,8 @@ export interface ViewerSettings {
   showOriginAxes: boolean;
   /** Show an X/Y/Z frame at every joint. */
   showJointAxes: boolean;
+  /** Show the corner orientation gizmo. */
+  showViewGizmo: boolean;
   /** Axes length as a fraction of the model size. */
   axisSize: number;
 }
