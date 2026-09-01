@@ -31,14 +31,44 @@ export class OpcuaBridge {
   private buildNodeId(cfg: OpcuaConfig, m: OpcuaJointMapping): string {
     const suffix = m.identifier.trim();
     // Allow a fully-qualified NodeId to be entered directly in the suffix.
-    if (/^ns=\d+;/i.test(suffix)) {
+    if (/^ns=\d+;/i.test(suffix) || /^nsu=/i.test(suffix)) {
       return suffix;
     }
     if (/^(i|s|g|b)=/i.test(suffix)) {
       return `ns=${cfg.namespace};${suffix}`;
     }
     const id = `${cfg.identifierPrefix}${suffix}`;
+    // Prefix written in compact form, e.g. "4;s=..." -> "ns=4;s=...". This is
+    // what users typically paste from a PLC/symbolic address into the prefix.
+    const compact = /^(\d+);\s*(i|s|g|b)=(.*)$/i.exec(id);
+    if (compact) {
+      return `ns=${compact[1]};${compact[2]}=${compact[3]}`;
+    }
+    if (/^ns=\d+;/i.test(id) || /^nsu=/i.test(id)) {
+      return id;
+    }
+    if (/^(i|s|g|b)=/i.test(id)) {
+      return `ns=${cfg.namespace};${id}`;
+    }
     return `ns=${cfg.namespace};${cfg.identifierType}=${id}`;
+  }
+
+  /** Extract a numeric value from a readValue result, or mark a good state. */
+  private readValueResult(dv: any): { value?: number; error?: string } {
+    const status = dv?.statusCode;
+    const isGood =
+      !status || typeof status.isGood !== "function" ? true : status.isGood();
+    if (!isGood) {
+      return { error: String(dv?.statusCode ?? "BadStatus") };
+    }
+    const raw = dv?.value?.value;
+    if (raw === undefined || raw === null) {
+      return { error: "no value" };
+    }
+    if (typeof raw !== "number" || Number.isNaN(raw)) {
+      return { error: `value is not numeric (${typeof raw})` };
+    }
+    return { value: raw };
   }
 
   async connect(cfg: OpcuaConfig): Promise<void> {
@@ -122,7 +152,6 @@ export class OpcuaBridge {
             { samplingInterval: cfg.samplingInterval, discardOldest: true, queueSize: 10 },
             TimestampsToReturn.Both
           );
-          subscribedCount += 1;
           this.jointStates.set(joint, { joint, nodeId, status: "subscribed" });
 
           item.on("changed", (dataValue: any) => {
@@ -147,21 +176,39 @@ export class OpcuaBridge {
           });
 
           // node-opcua may defer the initial 'changed' event, so read the
-          // current value once so the UI shows a value immediately.
+          // current value once. If the node is bad or non-numeric, mark it as
+          // an error (red) instead of leaving it green with no value.
           try {
             const dv = await this.session.readValue({
               nodeId,
               attributeId: AttributeIds.Value,
             });
-            const raw = dv?.value?.value;
-            if (typeof raw === "number" && !Number.isNaN(raw)) {
-              const value = raw * unit * m.scale + m.offset;
+            const res = this.readValueResult(dv);
+            if (res.value !== undefined) {
+              const value = res.value * unit * m.scale + m.offset;
               this.jointStates.set(joint, { joint, nodeId, status: "subscribed", value });
+              subscribedCount += 1;
               this.emitJointState();
               this.onValues({ [joint]: value });
+            } else {
+              this.jointStates.set(joint, {
+                joint,
+                nodeId,
+                status: "error",
+                error: res.error ?? "read failed",
+              });
+              this.emitJointState();
             }
-          } catch {
-            /* keep the subscribed state; no initial value yet */
+          } catch (e: any) {
+            const st = this.jointStates.get(joint);
+            this.jointStates.set(joint, {
+              joint,
+              nodeId,
+              status: "error",
+              value: st?.value,
+              error: e?.message ?? String(e),
+            });
+            this.emitJointState();
           }
         } catch (e: any) {
           const st = this.jointStates.get(joint);
@@ -172,6 +219,7 @@ export class OpcuaBridge {
             value: st?.value,
             error: e?.message ?? String(e),
           });
+          this.emitJointState();
         }
       }
 
