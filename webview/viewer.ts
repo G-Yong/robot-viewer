@@ -144,8 +144,8 @@ export class Viewer {
       return;
     }
     const vFov = (this.camera.fov * Math.PI) / 180;
-    // ~4.5% of the viewport height, independent of camera distance.
-    const factor = 2 * Math.tan(vFov / 2) * 0.045;
+    // ~2.25% of the viewport height, independent of camera distance.
+    const factor = 2 * Math.tan(vFov / 2) * 0.0225;
     const wp = new THREE.Vector3();
     for (const sprite of this.originLabels) {
       sprite.getWorldPosition(wp);
@@ -206,8 +206,9 @@ export class Viewer {
     const s = size ?? this.axisLength();
 
     // Origin frame, presented in the asset's coordinate frame (rotates with
-    // the model) so it reads as X/Y/Z in the model's up-axis.
-    this.originAxes = this.buildAxisFrame(s, { labels: true });
+    // the model) so it reads as X/Y/Z in the model's up-axis. Long reference
+    // lines, with the label kept near the origin so it stays readable.
+    this.originAxes = this.buildAxisFrame(s, { labels: true, lineLength: s * 10 });
     this.axesParent.add(this.originAxes);
     this.axesParent.rotation.x = this.upAxis === "+Z" ? -Math.PI / 2 : 0;
 
@@ -233,8 +234,12 @@ export class Viewer {
   }
 
   /** A colored line frame (X=red, Y=green, Z=blue) with optional labels. */
-  private buildAxisFrame(size: number, opts: { labels: boolean }): THREE.Group {
+  private buildAxisFrame(
+    size: number,
+    opts: { labels: boolean; lineLength?: number }
+  ): THREE.Group {
     const group = new THREE.Group();
+    const lineLen = opts.lineLength ?? size;
     const axes: [THREE.Vector3, number, string][] = [
       [new THREE.Vector3(1, 0, 0), 0xff4466, "X"],
       [new THREE.Vector3(0, 1, 0), 0x88ff44, "Y"],
@@ -243,7 +248,7 @@ export class Viewer {
     for (const [dir, color, label] of axes) {
       const geom = new THREE.BufferGeometry().setFromPoints([
         new THREE.Vector3(0, 0, 0),
-        dir.clone().multiplyScalar(size),
+        dir.clone().multiplyScalar(lineLen),
       ]);
       const mat = new THREE.LineBasicMaterial({
         color,
@@ -254,7 +259,7 @@ export class Viewer {
       line.renderOrder = 999;
       group.add(line);
       if (opts.labels) {
-        // Label size is proportional to the axis length so it never dwarfs it.
+        // Per-frame rescaled to a constant screen size; kept near the origin.
         const sprite = this.makeLabelSprite(label, color, size * 0.32);
         sprite.position.copy(dir.clone().multiplyScalar(size * 1.12));
         group.add(sprite);
