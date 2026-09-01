@@ -5,6 +5,7 @@
   "version": "0.1.0",
   "publisher": "G-Yong",
   "license": "MIT",
+  "icon": "image/icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/G-Yong/robot-viewer.git"
