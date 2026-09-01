@@ -37,7 +37,7 @@ export class OpcuaBridge {
     if (/^(i|s|g|b)=/i.test(suffix)) {
       return `ns=${cfg.namespace};${suffix}`;
     }
-    const id = `${cfg.identifierPrefix}${suffix}`;
+    const id = `${cfg.identifierPrefix}${separator(cfg.identifierPrefix)}${suffix}`;
     // Prefix written in compact form, e.g. "4;s=..." -> "ns=4;s=...". This is
     // what users typically paste from a PLC/symbolic address into the prefix.
     const compact = /^(\d+);\s*(i|s|g|b)=(.*)$/i.exec(id);
@@ -270,4 +270,9 @@ export class OpcuaBridge {
   dispose(): void {
     void this.safeCleanup();
   }
+}
+
+/** Joins a prefix and suffix with a "." unless the prefix already ends in one. */
+function separator(prefix: string): string {
+  return /[./:]$/.test(prefix) ? "" : ".";
 }
