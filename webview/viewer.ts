@@ -3,6 +3,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import URDFLoader from "urdf-loader";
 import type { URDFRobot, URDFJoint } from "urdf-loader";
 import { loadMesh } from "./meshLoader";
+import { ViewGizmo } from "./viewGizmo";
 import type { JointValues, ViewerSettings, SceneConfig } from "../src/protocol";
 
 export interface JointInfo {
@@ -50,10 +51,8 @@ export class Viewer {
   private jointAxisGroups: THREE.Group[] = [];
   private readonly axesParent = new THREE.Group();
 
-  // Corner orientation gizmo: a tiny line-axes scene drawn top-left every frame.
-  private readonly gizmoScene = new THREE.Scene();
-  private readonly gizmoCamera = new THREE.OrthographicCamera(-1.6, 1.6, 1.6, -1.6, 0, 4);
-  private gizmoAxes!: THREE.Group;
+  private gizmo!: ViewGizmo;
+  private readonly clock = new THREE.Clock();
 
   onJointChange?: (values: JointValues) => void;
 
@@ -96,7 +95,18 @@ export class Viewer {
     this.scene.add(this.axesParent);
     this.scene.add(this.robotRoot);
 
-    this.buildGizmo();
+    this.gizmo = new ViewGizmo(this.camera, this.controls, this.canvas);
+    // Capture phase so a gizmo click pre-empts OrbitControls' orbit start.
+    this.canvas.addEventListener(
+      "pointerdown",
+      (e) => {
+        if (this.settings.showViewGizmo && this.gizmo.handleClick(e)) {
+          e.stopPropagation();
+          e.preventDefault();
+        }
+      },
+      { capture: true }
+    );
 
     window.addEventListener("resize", () => this.resize());
     // The webview panel can resize without a window 'resize' event.
@@ -117,39 +127,14 @@ export class Viewer {
 
   private animate = (): void => {
     requestAnimationFrame(this.animate);
+    const delta = this.clock.getDelta();
+    this.gizmo.update(delta);
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
     if (this.settings.showViewGizmo) {
-      this.renderGizmo();
+      this.gizmo.render(this.renderer);
     }
   };
-
-  /** Build the corner orientation gizmo (colored lines + X/Y/Z labels). */
-  private buildGizmo(): void {
-    this.gizmoCamera.position.set(0, 0, 2);
-    this.gizmoAxes = this.buildAxisFrame(1, { labels: true, lineWidth: true });
-    this.gizmoScene.add(this.gizmoAxes);
-  }
-
-  /** Draw the gizmo into a small top-left viewport, oriented like the camera. */
-  private renderGizmo(): void {
-    const dim = 90;
-    const margin = 10;
-    const size = this.renderer.getSize(new THREE.Vector2());
-    // The gizmo axes mirror the camera orientation (like a nav cube).
-    this.gizmoAxes.quaternion.copy(this.camera.quaternion).invert();
-
-    const prev = this.renderer.getViewport(new THREE.Vector4());
-    this.renderer.clearDepth();
-    this.renderer.setScissorTest(true);
-    // WebGL viewport origin is bottom-left, so top-left => y = height - dim.
-    const y = size.y - dim - margin;
-    this.renderer.setViewport(margin, y, dim, dim);
-    this.renderer.setScissor(margin, y, dim, dim);
-    this.renderer.render(this.gizmoScene, this.gizmoCamera);
-    this.renderer.setScissorTest(false);
-    this.renderer.setViewport(prev.x, prev.y, prev.z, prev.w);
-  }
 
   loadModel(urdfContent: string): JointInfo[] {
     if (this.robot) {
@@ -222,10 +207,7 @@ export class Viewer {
   }
 
   /** A colored line frame (X=red, Y=green, Z=blue) with optional labels. */
-  private buildAxisFrame(
-    size: number,
-    opts: { labels: boolean; lineWidth?: boolean }
-  ): THREE.Group {
+  private buildAxisFrame(size: number, opts: { labels: boolean }): THREE.Group {
     const group = new THREE.Group();
     const axes: [THREE.Vector3, number, string][] = [
       [new THREE.Vector3(1, 0, 0), 0xff4466, "X"],
@@ -246,15 +228,16 @@ export class Viewer {
       line.renderOrder = 999;
       group.add(line);
       if (opts.labels) {
-        const sprite = this.makeLabelSprite(label, color);
-        sprite.position.copy(dir.clone().multiplyScalar(size * 1.18));
+        // Label size is proportional to the axis length so it never dwarfs it.
+        const sprite = this.makeLabelSprite(label, color, size * 0.32);
+        sprite.position.copy(dir.clone().multiplyScalar(size * 1.12));
         group.add(sprite);
       }
     }
     return group;
   }
 
-  private makeLabelSprite(text: string, color: number): THREE.Sprite {
+  private makeLabelSprite(text: string, color: number, scale: number): THREE.Sprite {
     const canvas = document.createElement("canvas");
     canvas.width = 64;
     canvas.height = 64;
@@ -272,7 +255,7 @@ export class Viewer {
       depthWrite: false,
     });
     const sprite = new THREE.Sprite(mat);
-    sprite.scale.setScalar(0.6);
+    sprite.scale.setScalar(scale);
     return sprite;
   }
 
@@ -310,8 +293,9 @@ export class Viewer {
       // URDF is Z-up; rotate to the viewer's Y-up world.
       this.robotRoot.rotation.x = -Math.PI / 2;
     }
-    // Keep the origin frame in the asset's coordinate frame.
+    // Keep the origin frame + corner gizmo in the asset's coordinate frame.
     this.axesParent.rotation.x = this.upAxis === "+Z" ? -Math.PI / 2 : 0;
+    this.gizmo?.setFrameOffset(this.axesParent.quaternion);
   }
 
   private applyMeshSettings(): void {
