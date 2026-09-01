@@ -36,13 +36,10 @@ export class Viewer {
     colorMode: "original",
   };
 
-  // Distinct vivid colors cycled per link in "alternate" mode, so adjacent
-  // links are easy to tell apart regardless of the URDF's own material colors.
-  private static readonly PALETTE = [
-    0xff5252, 0xff9800, 0xffeb3b, 0x4caf50, 0x00bcd4, 0x2196f3,
-    0x3f51b5, 0x9c27b0, 0xe91e63, 0x8bc34a, 0x009688, 0x795548,
-    0xff4081, 0x607d8b, 0x7c4dff, 0xff6d00,
-  ];
+  // "alternate" mode uses golden-angle hue spacing so that consecutive links
+  // (and any two nearby links) get clearly separated colors — a plain rainbow
+  // palette makes neighbors too similar.
+  private static readonly GOLDEN_ANGLE = 137.508;
   private linkIndex = new Map<string, number>();
 
   onJointChange?: (values: JointValues) => void;
@@ -202,7 +199,7 @@ export class Viewer {
       }
 
       if (this.settings.colorMode === "alternate" && altColor) {
-        m.color.set(altColor);
+        m.color.copy(altColor);
         if (m.transparent) {
           m.opacity = 1;
           m.transparent = false;
@@ -227,13 +224,18 @@ export class Viewer {
     });
   }
 
-  /** Palette color for the link that owns this mesh, or undefined. */
-  private paletteColorFor(mesh: any): number | undefined {
+  /** Color for the link that owns this mesh, or undefined. Golden-angle hue
+   *  spacing keeps neighboring links well-separated. */
+  private paletteColorFor(mesh: any): THREE.Color | undefined {
     let node: any = mesh;
     while (node) {
       if (node.isURDFLink && node.urdfName) {
         const idx = this.linkIndex.get(node.urdfName) ?? 0;
-        return Viewer.PALETTE[idx % Viewer.PALETTE.length];
+        // Rotate hue by the golden angle per link for maximum separation, and
+        // vary lightness slightly to further distinguish close hues.
+        const hue = (idx * Viewer.GOLDEN_ANGLE) % 360;
+        const lightness = 0.5 + (idx % 2) * 0.1;
+        return new THREE.Color().setHSL(hue / 360, 0.85, lightness);
       }
       node = node.parent;
     }
