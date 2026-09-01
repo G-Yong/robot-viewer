@@ -52,6 +52,12 @@ export interface ViewerSettings {
   wireframe: boolean;
   /** "original" uses the URDF/material colors; "alternate" gives each link a distinct palette color. */
   colorMode: "original" | "alternate";
+  /** Show the X/Y/Z axes at the world origin (model base). */
+  showOriginAxes: boolean;
+  /** Show an X/Y/Z frame at every joint. */
+  showJointAxes: boolean;
+  /** Axes length as a fraction of the model size. */
+  axisSize: number;
 }
 
 /** Per-joint OPC UA node binding. */

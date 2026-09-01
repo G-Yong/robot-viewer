@@ -34,6 +34,9 @@ export class Viewer {
     showCollision: false,
     wireframe: false,
     colorMode: "original",
+    showOriginAxes: true,
+    showJointAxes: true,
+    axisSize: 0.25,
   };
 
   // "alternate" mode uses golden-angle hue spacing so that consecutive links
@@ -41,6 +44,10 @@ export class Viewer {
   // palette makes neighbors too similar.
   private static readonly GOLDEN_ANGLE = 137.508;
   private linkIndex = new Map<string, number>();
+
+  private originAxes?: THREE.AxesHelper;
+  private jointAxes = new Set<THREE.AxesHelper>();
+  private axesParent = new THREE.Group();
 
   onJointChange?: (values: JointValues) => void;
 
@@ -80,6 +87,7 @@ export class Viewer {
     (this.grid.material as THREE.Material).transparent = true;
     this.scene.add(this.grid);
 
+    this.scene.add(this.axesParent);
     this.scene.add(this.robotRoot);
 
     window.addEventListener("resize", () => this.resize());
@@ -127,6 +135,7 @@ export class Viewer {
     this.robot = robot;
     this.robotRoot.add(robot);
     this.applyUpAxis();
+    this.buildAxes();
 
     manager.onLoad = () => {
       this.applyMeshSettings();
@@ -139,6 +148,56 @@ export class Viewer {
     setTimeout(() => this.fitCamera(), 50);
 
     return this.getJoints();
+  }
+
+  /** Create world-origin and per-joint axes sized to the model. */
+  private buildAxes(size?: number): void {
+    // Remove any previously built axes (clears children of the group too).
+    for (const child of [...this.axesParent.children]) {
+      this.axesParent.remove(child);
+    }
+    this.jointAxes.clear();
+
+    if (!this.robot) {
+      return;
+    }
+    const s = size ?? this.axisLength();
+
+    // Origin frame (in the model's base frame, rotates with robotRoot).
+    this.originAxes = new THREE.AxesHelper(s);
+    this.axesParent.add(this.originAxes);
+
+    // One frame per movable joint.
+    for (const name of Object.keys(this.robot.joints ?? {})) {
+      const joint = (this.robot.joints as any)[name];
+      if (!joint || joint.jointType === "fixed") {
+        continue;
+      }
+      const axes = new THREE.AxesHelper(s * 0.8);
+      joint.add(axes);
+      this.jointAxes.add(axes);
+    }
+    this.applyAxisVisibility();
+  }
+
+  /** Axes length derived from the model bounding box. */
+  private axisLength(): number {
+    const box = new THREE.Box3().setFromObject(this.robotRoot);
+    if (box.isEmpty()) {
+      return 1;
+    }
+    const size = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z) || 1;
+    return maxDim * this.settings.axisSize;
+  }
+
+  private applyAxisVisibility(): void {
+    if (this.originAxes) {
+      this.originAxes.visible = this.settings.showOriginAxes;
+    }
+    for (const axes of this.jointAxes) {
+      axes.visible = this.settings.showJointAxes;
+    }
   }
 
   private applyUpAxis(): void {
@@ -266,6 +325,9 @@ export class Viewer {
     // ground plane (e.g. a base mounted 1 m up) is shown faithfully.
     this.grid.position.y = 0;
     this.directional.shadow.camera.far = maxDim * 20;
+
+    // Re-size the axes after the model's true bounds are known.
+    this.buildAxes();
   }
 
   getJoints(): JointInfo[] {
@@ -328,6 +390,7 @@ export class Viewer {
       this.fitCamera();
     }
     this.applyMeshSettings();
+    this.applyAxisVisibility();
   }
 
   getSettings(): ViewerSettings {

@@ -272,6 +272,22 @@ export class UI {
       this.cb.onSettingsChange({ colorMode: colorMode.value as "original" | "alternate" })
     );
     body.appendChild(el("div", { class: "row" }, [el("label", {}, ["Color mode"]), colorMode]));
+
+    body.appendChild(
+      this.checkbox("Origin axes", s.showOriginAxes, (v) =>
+        this.cb.onSettingsChange({ showOriginAxes: v })
+      )
+    );
+    body.appendChild(
+      this.checkbox("Joint axes", s.showJointAxes, (v) =>
+        this.cb.onSettingsChange({ showJointAxes: v })
+      )
+    );
+    body.appendChild(
+      this.sliderRow("Axis size", 0.05, 1, s.axisSize, (v) =>
+        this.cb.onSettingsChange({ axisSize: v })
+      )
+    );
   }
 
   // ---- Scene tab ------------------------------------------------------------
