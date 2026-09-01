@@ -2,7 +2,7 @@
   "name": "robot-viewer",
   "displayName": "Robot Viewer",
   "description": "Import, visualize and interact with robot models (URDF/Xacro). Adjust joints, control the camera, tweak rendering, save scenes, and sync joint states over OPC UA / WebSocket.",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publisher": "G-Yong",
   "license": "MIT",
   "icon": "image/icon.png",
