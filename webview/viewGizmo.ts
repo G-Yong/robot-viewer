@@ -27,8 +27,8 @@ export class ViewGizmo {
   private animT = 0;
   private readonly animDuration = 0.35;
 
-  readonly dim = 96;
-  readonly margin = 10;
+  readonly dim = 112;
+  readonly margin = 12;
 
   constructor(
     private readonly mainCamera: THREE.PerspectiveCamera,
@@ -70,7 +70,7 @@ export class ViewGizmo {
 
       const pos = new THREE.Sprite(this.spriteMat(color, label));
       pos.position.copy(dir);
-      pos.scale.setScalar(0.42);
+      pos.scale.setScalar(0.5);
       pos.userData.dir = dir.clone();
       this.root.add(pos);
       this.interactive.push(pos);
@@ -78,9 +78,9 @@ export class ViewGizmo {
 
       const neg = new THREE.Sprite(this.spriteMat(color, null));
       neg.position.copy(dir.clone().multiplyScalar(-1));
-      neg.scale.setScalar(0.31);
+      neg.scale.setScalar(0.36);
       neg.userData.dir = dir.clone().multiplyScalar(-1);
-      (neg.material as THREE.SpriteMaterial).opacity = 0.4;
+      (neg.material as THREE.SpriteMaterial).opacity = 0.5;
       this.root.add(neg);
       this.interactive.push(neg);
       this.negSprites[label] = neg;
@@ -93,15 +93,15 @@ export class ViewGizmo {
     canvas.height = 64;
     const ctx = canvas.getContext("2d")!;
     ctx.beginPath();
-    ctx.arc(32, 32, 15, 0, 2 * Math.PI);
+    ctx.arc(32, 32, 18, 0, 2 * Math.PI);
     ctx.closePath();
     ctx.fillStyle = `#${new THREE.Color(color).getHexString()}`;
     ctx.fill();
     if (text) {
-      ctx.font = "bold 30px Arial";
+      ctx.font = "bold 34px Arial";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillStyle = "#10141a";
+      ctx.fillStyle = "#ffffff";
       ctx.fillText(text, 32, 34);
     }
     const tex = new THREE.CanvasTexture(canvas);
@@ -126,8 +126,8 @@ export class ViewGizmo {
       .applyQuaternion(inv);
     const fade = (label: string, coord: number) => {
       const near = coord >= 0;
-      (this.posSprites[label].material as THREE.SpriteMaterial).opacity = near ? 1 : 0.4;
-      (this.negSprites[label].material as THREE.SpriteMaterial).opacity = near ? 0.4 : 1;
+      (this.posSprites[label].material as THREE.SpriteMaterial).opacity = near ? 1 : 0.5;
+      (this.negSprites[label].material as THREE.SpriteMaterial).opacity = near ? 0.5 : 1;
     };
     fade("X", point.x);
     fade("Y", point.y);
@@ -135,6 +135,10 @@ export class ViewGizmo {
 
     const size = renderer.getSize(new THREE.Vector2());
     const prev = renderer.getViewport(new THREE.Vector4());
+    const prevAutoClear = renderer.autoClear;
+    // Draw OVER the scene (no color clear) so the gizmo has a transparent
+    // background instead of an opaque black box.
+    renderer.autoClear = false;
     renderer.clearDepth();
     renderer.setScissorTest(true);
     // WebGL viewport origin is bottom-left, so top-left => y = height - dim.
@@ -144,6 +148,7 @@ export class ViewGizmo {
     renderer.render(this.gizmoScene, this.gizmoCamera);
     renderer.setScissorTest(false);
     renderer.setViewport(prev.x, prev.y, prev.z, prev.w);
+    renderer.autoClear = prevAutoClear;
   }
 
   /** Returns true when the click hit the gizmo (and started a camera snap). */
