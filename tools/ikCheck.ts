@@ -27,6 +27,14 @@ import {
   tcpPose,
   type TcpSpec,
 } from "../webview/ikSolver";
+import {
+  buildReadout,
+  normalizeQuaternion,
+  poseInFrame,
+  quaternionToEuler,
+  quaternionToRpy,
+  type EulerOrder,
+} from "../webview/poseFormat";
 import type { JointValues } from "../src/protocol";
 
 // ---------------------------------------------------------------------------
@@ -434,6 +442,308 @@ function checkRightArmStill(
 }
 
 // ---------------------------------------------------------------------------
+// End-effector pose readout (webview/poseFormat.ts)
+// ---------------------------------------------------------------------------
+
+const RAD2DEG = 180 / Math.PI;
+
+const AXIS: Record<string, THREE.Vector3> = {
+  X: new THREE.Vector3(1, 0, 0),
+  Y: new THREE.Vector3(0, 1, 0),
+  Z: new THREE.Vector3(0, 0, 1),
+};
+
+/**
+ * Build a rotation from a convention's *definition*: intrinsic rotations about
+ * the moving axes compose as R_a1(θ1)·R_a2(θ2)·R_a3(θ3) in the fixed frame. This
+ * is deliberately independent of the extraction code under test - it is the
+ * oracle, not a mirror of it.
+ */
+function eulerToQuaternion(
+  order: EulerOrder,
+  a: number,
+  b: number,
+  c: number
+): THREE.Quaternion {
+  const q = new THREE.Quaternion();
+  const [i, j, k] = order.split("") as [string, string, string];
+  for (const [axis, angle] of [
+    [i, a],
+    [j, b],
+    [k, c],
+  ] as [string, number][]) {
+    q.multiply(new THREE.Quaternion().setFromAxisAngle(AXIS[axis], angle));
+  }
+  return q;
+}
+
+/** Wrap into (-pi, pi] so two equivalent angle readings can be compared. */
+function wrapPi(a: number): number {
+  const w = ((a + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+  return w === -Math.PI ? Math.PI : w;
+}
+
+function nearAngles(got: number[], want: number[], tol = 1e-9): boolean {
+  return got.length === want.length && got.every((v, i) => Math.abs(wrapPi(v - want[i])) < tol);
+}
+
+/**
+ * Rotation difference in radians. Deliberately not Quaternion.angleTo(): that is
+ * 2*acos(|q1·q2|), and near zero rotation acos loses half its digits, so it reports
+ * ~1e-8 for two quaternions that agree to 1e-15. The rotation vector stays exact
+ * there, which is the same reason ikSolver uses it for the solver's own step.
+ */
+function rotationDelta(a: THREE.Quaternion, b: THREE.Quaternion): number {
+  return quaternionToRotationVector(a.clone().multiply(b.clone().invert())).length();
+}
+
+const degList = (v: number[]): string => v.map((a) => (a * RAD2DEG).toFixed(1)).join(", ");
+
+/** Values that are known by construction, not by running the extractor. */
+function checkPoseKnownValues(): void {
+  const identity = new THREE.Quaternion();
+  const z90 = new THREE.Quaternion().setFromAxisAngle(AXIS.Z, Math.PI / 2);
+  const x90 = new THREE.Quaternion().setFromAxisAngle(AXIS.X, Math.PI / 2);
+
+  const rpyZ = quaternionToRpy(z90);
+  const rpyX = quaternionToRpy(x90);
+
+  check(
+    "rpy known values (Z=90°, X=90°)",
+    nearAngles(quaternionToRpy(identity), [0, 0, 0]) &&
+      nearAngles(rpyZ, [0, 0, Math.PI / 2]) &&
+      nearAngles(rpyX, [Math.PI / 2, 0, 0]),
+    `Rz(90°) → ${degList(rpyZ)}; Rx(90°) → ${degList(rpyX)}`
+  );
+
+  const orders: EulerOrder[] = ["ZYZ", "ZXZ", "XYZ", "ZYX"];
+  check(
+    "identity reads as all-zero angles",
+    orders.every((o) => nearAngles(quaternionToEuler(identity, o).angles, [0, 0, 0]))
+  );
+}
+
+/**
+ * Angle triples whose middle angle sits in the convention's principal range, so
+ * the extraction has a unique answer to be compared against.
+ */
+const POSE_CASES: Record<EulerOrder, [number, number, number][]> = {
+  ZYZ: [
+    [0.3, 0.7, 1.1],
+    [-1.2, 2.4, -0.5],
+    [2.0, 1.0, 2.6],
+    [0.0, 1.9, 0.0],
+    [-0.9, 0.2, 3.0],
+  ],
+  ZXZ: [
+    [0.3, 0.7, 1.1],
+    [-1.2, 2.4, -0.5],
+    [2.0, 1.0, 2.6],
+    [0.5, 2.9, -1.4],
+    [-0.9, 0.2, 3.0],
+  ],
+  XYZ: [
+    [0.3, 0.7, 1.1],
+    [-1.2, -1.4, -0.5],
+    [2.0, 1.0, 2.6],
+    [0.4, 0.9, -2.2],
+    [-0.9, 0.2, 3.0],
+  ],
+  ZYX: [
+    [0.3, 0.7, 1.1],
+    [-1.2, -1.4, -0.5],
+    [2.0, 1.0, 2.6],
+    [0.4, 0.9, -2.2],
+    [-0.9, 0.2, 3.0],
+  ],
+};
+
+/** Each convention must invert itself, on both the rotation and the angles. */
+function checkPoseRoundTrip(): void {
+  let worstAngle = 0;
+  let worstRotation = 0;
+  let n = 0;
+
+  for (const order of Object.keys(POSE_CASES) as EulerOrder[]) {
+    for (const [a, b, c] of POSE_CASES[order]) {
+      const q = eulerToQuaternion(order, a, b, c);
+      const res = quaternionToEuler(q, order);
+      const rebuilt = eulerToQuaternion(order, res.angles[0], res.angles[1], res.angles[2]);
+      worstRotation = Math.max(worstRotation, rotationDelta(rebuilt, q));
+      worstAngle = Math.max(
+        worstAngle,
+        Math.abs(wrapPi(res.angles[0] - a)),
+        Math.abs(wrapPi(res.angles[1] - b)),
+        Math.abs(wrapPi(res.angles[2] - c))
+      );
+      n++;
+    }
+  }
+
+  check(
+    `${n} euler round trips (4 conventions)`,
+    worstAngle < 1e-9 && worstRotation < 1e-9,
+    `worst |dθ| = ${fmt(worstAngle)} rad, worst |dq| = ${fmt(worstRotation)} rad`
+  );
+}
+
+/**
+ * At the degenerate middle angle the first and third angles stop being
+ * separate: the display pins the third to zero and has to say so, while the two
+ * that remain must still reproduce the rotation exactly.
+ */
+function checkPoseGimbalLock(): void {
+  const cases: [EulerOrder, number][] = [
+    ["ZYZ", 0],
+    ["ZXZ", 0],
+    ["XYZ", Math.PI / 2],
+    ["ZYX", Math.PI / 2],
+  ];
+
+  let worstRotation = 0;
+  const bad: string[] = [];
+  for (const [order, polar] of cases) {
+    const q = eulerToQuaternion(order, 0.4, polar, 0.0);
+    const res = quaternionToEuler(q, order);
+    const rebuilt = eulerToQuaternion(order, res.angles[0], res.angles[1], res.angles[2]);
+    worstRotation = Math.max(worstRotation, rotationDelta(rebuilt, q));
+    if (!res.gimbal || Math.abs(res.angles[2]) > 1e-9) {
+      bad.push(`${order}(gimbal=${res.gimbal}, θ3=${fmt(res.angles[2])})`);
+    }
+  }
+
+  check(
+    "gimbal lock is flagged and still reproduces the rotation",
+    bad.length === 0 && worstRotation < 1e-9,
+    bad.length > 0 ? bad.join(" ") : `worst |dq| = ${fmt(worstRotation)} rad`
+  );
+}
+
+/** q and -q are the same rotation; the readout must not flip between them. */
+function checkQuaternionReadout(): void {
+  const q = new THREE.Quaternion().setFromAxisAngle(
+    new THREE.Vector3(1, 1, 0).normalize(),
+    (2 * Math.PI) / 3
+  );
+  const a = normalizeQuaternion(q);
+  const b = normalizeQuaternion(new THREE.Quaternion(-q.x, -q.y, -q.z, -q.w));
+  const sameSign =
+    Math.abs(a.x - b.x) < 1e-12 &&
+    Math.abs(a.y - b.y) < 1e-12 &&
+    Math.abs(a.z - b.z) < 1e-12 &&
+    Math.abs(a.w - b.w) < 1e-12;
+
+  // A half turn has w = 0, where the sign has to be pinned by the vector part.
+  const half = normalizeQuaternion(new THREE.Quaternion(0, 0, -1, 0));
+  const halfOk = half.z > 0 && Math.abs(half.w) < 1e-12;
+
+  const scaled = normalizeQuaternion(new THREE.Quaternion(q.x * 3, q.y * 3, q.z * 3, q.w * 3));
+  const unitOk = Math.abs(scaled.length() - 1) < 1e-12 && scaled.dot(a) > 0;
+
+  // A zero quaternion must degrade to identity, never to NaN.
+  const zero = normalizeQuaternion(new THREE.Quaternion(0, 0, 0, 0));
+  const zeroOk =
+    Math.abs(zero.length() - 1) < 1e-12 &&
+    Math.abs(zero.w - 1) < 1e-12 &&
+    Number.isFinite(zero.x);
+
+  check(
+    "quaternion is normalised, sign-stable and never NaN",
+    sameSign && halfOk && unitOk && zeroOk,
+    `q = (${a.x.toFixed(3)}, ${a.y.toFixed(3)}, ${a.z.toFixed(3)}, ${a.w.toFixed(3)})`
+  );
+}
+
+/**
+ * Expressing the TCP pose in a frame and mapping it back into the world must land
+ * on the world pose again - that is all "origin" is allowed to mean. The one case
+ * with an answer known in advance is the TCP's own link: there the pose collapses
+ * to the tool offset with an identity orientation.
+ */
+function checkPoseOriginFrames(robot: any, spec: TcpSpec): void {
+  const world = tcpPose(robot, spec);
+  const frames: [string, THREE.Object3D][] = [
+    ["base", robot],
+    ["base_link", robot.links["base_link"]],
+    ["link2", robot.links["link2"]],
+  ];
+
+  let worstPos = 0;
+  let worstRot = 0;
+  for (const [, frame] of frames) {
+    frame.updateMatrixWorld(true);
+    const rel = poseInFrame(world, frame);
+    const backPos = rel.position.clone().applyMatrix4(frame.matrixWorld);
+    const backQuat = frame.getWorldQuaternion(new THREE.Quaternion()).multiply(rel.quaternion);
+    worstPos = Math.max(worstPos, backPos.distanceTo(world.position));
+    worstRot = Math.max(worstRot, rotationDelta(backQuat, world.quaternion));
+  }
+
+  check(
+    "a pose re-expressed in an origin frame maps back to the world pose",
+    worstPos < 1e-9 && worstRot < 1e-9,
+    `worst |dp| = ${fmt(worstPos)} m, worst |dq| = ${fmt(worstRot)} rad`
+  );
+
+  const self = poseInFrame(world, robot.links[spec.link]);
+  check(
+    "the TCP's own link reads back the tool offset with no rotation",
+    self.position.distanceTo(spec.offset) < 1e-9 &&
+      rotationDelta(self.quaternion, new THREE.Quaternion()) < 1e-9,
+    `p = (${self.position.toArray().map((v) => v.toFixed(4)).join(", ")})`
+  );
+
+  // "World" is the null frame: the identity, i.e. the world pose untouched.
+  const asWorld = poseInFrame(world, null);
+  check(
+    "the world origin is the identity",
+    asWorld.position.distanceTo(world.position) < 1e-12 &&
+      rotationDelta(asWorld.quaternion, world.quaternion) < 1e-12
+  );
+}
+
+/** The panel's row structure: mm for position, degrees for angles, no NaN. */
+function checkPoseReadout(): void {
+  const pose = {
+    position: new THREE.Vector3(0.1, -0.02, 0.88),
+    quaternion: new THREE.Quaternion(),
+  };
+
+  const rpy = buildReadout(pose, "Base", { representation: "rpy", eulerOrder: "ZYX" });
+  const positionCells = rpy.groups[0].cells.map((c) => `${c.label}=${c.value}`);
+  const rpyLabels = rpy.groups[1].cells.map((c) => c.label).join("");
+
+  check(
+    "readout formats position in mm and angles in degrees",
+    rpy.origin === "Base" &&
+      rpy.groups[0].unit === "mm" &&
+      positionCells.join(",") === "X=100.0,Y=-20.0,Z=880.0" &&
+      rpy.groups[1].unit === "°" &&
+      rpyLabels === "RPY" &&
+      rpy.groups[1].cells.every((c) => c.value === "0.0"),
+    `${positionCells.join(" ")} / ${rpyLabels}`
+  );
+
+  // Intrinsic rotations are shown with primes, which is the only way to read the
+  // axis order off the row.
+  const zyz = buildReadout(pose, "Base", { representation: "euler", eulerOrder: "ZYZ" });
+  check(
+    "intrinsic euler orders are labelled with primes",
+    zyz.groups[1].cells.map((c) => c.label).join("") === "ZY′Z″",
+    zyz.groups[1].cells.map((c) => c.label).join("")
+  );
+
+  const quat = buildReadout(pose, "World", { representation: "quaternion", eulerOrder: "ZYX" });
+  check(
+    "quaternion readout has four cells and no unit",
+    quat.groups[1].cells.map((c) => c.label).join("") === "xyzw" &&
+      quat.groups[1].unit === "" &&
+      quat.groups[1].cells[3].value === "1.0000",
+    quat.groups[1].cells.map((c) => `${c.label}=${c.value}`).join(" ")
+  );
+}
+
+// ---------------------------------------------------------------------------
 
 function main(): void {
   installDomShim();
@@ -454,6 +764,13 @@ function main(): void {
   checkUnreachableTarget(robot, spec);
 
   checkIndependentArms(loadSampleRobot("dual_arm.urdf"));
+
+  checkPoseKnownValues();
+  checkPoseRoundTrip();
+  checkPoseGimbalLock();
+  checkQuaternionReadout();
+  checkPoseOriginFrames(robot, spec);
+  checkPoseReadout();
 
   console.log(failures === 0 ? "\nIK CHECK OK" : `\nIK CHECK FAILED (${failures})`);
   process.exit(failures === 0 ? 0 : 1);

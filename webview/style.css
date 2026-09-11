@@ -338,6 +338,46 @@ input[type="color"] {
   line-height: 1.4;
 }
 
+/* End-effector pose readout ------------------------------------------------- */
+.pose {
+  margin: 6px 0 2px;
+  font-size: 11px;
+}
+
+/* One line per unit: flex, not grid, so the trailing unit label can stay narrow
+   while the number cells share the rest evenly. */
+.pose-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 2px 0;
+}
+
+.pose-cell {
+  display: flex;
+  gap: 4px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.pose-label {
+  color: var(--text-dim);
+  flex: 0 0 auto;
+}
+
+.pose-value {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pose-unit {
+  color: var(--text-dim);
+  flex: 0 0 auto;
+}
+
 .status {
   padding: 6px 2px 0;
   font-size: 11px;

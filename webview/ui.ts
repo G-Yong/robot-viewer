@@ -1,4 +1,5 @@
-import type { Viewer, JointInfo, IkStatus } from "./viewer";
+import type { Viewer, JointInfo, IkStatus, PoseDisplaySettings } from "./viewer";
+import type { EulerOrder, PoseReadout, PoseRepresentation } from "./poseFormat";
 import type {
   ViewerSettings,
   JointValues,
@@ -22,6 +23,31 @@ export interface UICallbacks {
   /** Tool offset as typed: millimetres, in the TCP link's frame. */
   onIkToolOffset: (x: number, y: number, z: number) => void;
   onIkHandleSize: (factor: number) => void;
+  /** Frame the pose readout is measured in: "World", "Base" or a link name. */
+  onIkPoseOrigin: (origin: string) => void;
+  onIkPoseFormat: (representation: PoseRepresentation, eulerOrder: EulerOrder) => void;
+}
+
+/**
+ * One entry per orientation representation. The euler entries carry their axis
+ * order in the value so a single dropdown covers what would otherwise be a
+ * representation picker plus a second order picker that is meaningless for half
+ * of its own options.
+ */
+const POSE_FORMATS: { value: string; label: string }[] = [
+  { value: "rpy", label: "RPY (fixed XYZ)" },
+  { value: "euler:ZYZ", label: "Euler ZYZ" },
+  { value: "euler:ZXZ", label: "Euler ZXZ" },
+  { value: "euler:XYZ", label: "Euler XYZ" },
+  { value: "euler:ZYX", label: "Euler ZYX" },
+  { value: "quaternion", label: "Quaternion" },
+];
+
+/** The Format dropdown value that stands for the current pair of settings. */
+function poseFormatValue(display: PoseDisplaySettings): string {
+  return display.representation === "euler"
+    ? `euler:${display.eulerOrder}`
+    : display.representation;
 }
 
 const RAD2DEG = 180 / Math.PI;
@@ -67,6 +93,13 @@ export class UI {
   private ikLinkSelect!: HTMLSelectElement;
   private ikOffsetInputs: HTMLInputElement[] = [];
   private ikStatusEl!: HTMLElement;
+
+  private poseOriginSelect!: HTMLSelectElement;
+  private poseFormatSelect!: HTMLSelectElement;
+  private poseBody!: HTMLElement;
+  private poseNoteEl!: HTMLElement;
+  private poseCells: HTMLElement[] = [];
+  private poseLayoutKey = "";
 
   private opcua: OpcuaConfig = defaultOpcuaConfig();
   private opcuaUserModified = false;
@@ -170,7 +203,8 @@ export class UI {
     }
   }
 
-  // Sub-section (collapsible) used inside the OPC UA tab.
+  // Sub-section (collapsible), used to group the OPC UA tab into steps and to set
+  // the pose readout apart from the IK controls.
   private section(title: string, collapsed = false): {
     section: HTMLElement;
     body: HTMLElement;
@@ -234,6 +268,9 @@ export class UI {
     this.rebuildJointMappings(joints.map((j) => j.name));
     // A new model means new TCP candidates: the viewer has already chosen one.
     this.populateIkLinks();
+    // ...and new origin frames, which the viewer has already fallen back from if
+    // the previous choice does not exist in this model.
+    this.populatePoseOrigins();
   }
 
   private fmt(j: JointInfo): string {
@@ -326,7 +363,112 @@ export class UI {
       el("div", { class: "note" }, ["W move only • E rotate only • Q both"])
     );
 
+    body.appendChild(this.poseSection());
+
     this.populateIkLinks();
+  }
+
+  // ---- End-effector pose (read-only) ----------------------------------------
+
+  private poseSection(): HTMLElement {
+    const { section, body } = this.section("End-effector pose");
+    const display = this.viewer.getPoseDisplay();
+
+    this.poseOriginSelect = el("select", {}) as HTMLSelectElement;
+    this.poseOriginSelect.addEventListener("change", () =>
+      this.cb.onIkPoseOrigin(this.poseOriginSelect.value)
+    );
+    body.appendChild(
+      el("div", { class: "row" }, [el("label", {}, ["Origin"]), this.poseOriginSelect])
+    );
+
+    this.poseFormatSelect = el(
+      "select",
+      {},
+      POSE_FORMATS.map((f) => option(f.value, f.label, f.value === poseFormatValue(display)))
+    ) as HTMLSelectElement;
+    this.poseFormatSelect.addEventListener("change", () => {
+      // The stored order carries over when the new choice is not an euler order,
+      // so switching to RPY and back does not forget which euler order was in use.
+      const order = this.viewer.getPoseDisplay().eulerOrder;
+      const value = this.poseFormatSelect.value;
+      if (value.startsWith("euler:")) {
+        this.cb.onIkPoseFormat("euler", value.slice("euler:".length) as EulerOrder);
+      } else {
+        this.cb.onIkPoseFormat(value as PoseRepresentation, order);
+      }
+    });
+    body.appendChild(
+      el("div", { class: "row" }, [el("label", {}, ["Format"]), this.poseFormatSelect])
+    );
+
+    this.poseBody = el("div", { class: "pose" });
+    body.appendChild(this.poseBody);
+
+    this.poseNoteEl = el("div", { class: "note" }, [""]);
+    body.appendChild(this.poseNoteEl);
+
+    this.populatePoseOrigins();
+    return section;
+  }
+
+  /** Rebuild the origin list from the model that is loaded now. */
+  populatePoseOrigins(): void {
+    const display = this.viewer.getPoseDisplay();
+    this.poseOriginSelect.replaceChildren(
+      ...this.viewer
+        .poseOriginOptions()
+        .map((name) => option(name, name, name === display.origin))
+    );
+    this.poseFormatSelect.value = poseFormatValue(display);
+  }
+
+  /**
+   * Show a readout. The layout only changes when the format does, so the cells are
+   * reused across updates and only their text is rewritten: this runs on every
+   * pointer move of an IK drag, where rebuilding the DOM would be pure waste.
+   */
+  updatePose(readout: PoseReadout): void {
+    const key = readout.groups
+      .map((g) => g.cells.map((c) => c.label).join("") + "|" + g.unit)
+      .join("/");
+
+    if (key !== this.poseLayoutKey) {
+      this.poseLayoutKey = key;
+      this.poseCells = [];
+      this.poseBody.replaceChildren(
+        ...readout.groups.map((group) => {
+          const cells = group.cells.map((cell) => {
+            const value = el("span", { class: "pose-value" }, [cell.value]);
+            this.poseCells.push(value);
+            return el("span", { class: "pose-cell" }, [
+              el("span", { class: "pose-label" }, [cell.label]),
+              value,
+            ]);
+          });
+          return el("div", { class: "pose-row" }, [
+            ...cells,
+            ...(group.unit ? [el("span", { class: "pose-unit" }, [group.unit])] : []),
+          ]);
+        })
+      );
+    } else {
+      let i = 0;
+      for (const group of readout.groups) {
+        for (const cell of group.cells) {
+          const node = this.poseCells[i++];
+          if (node) {
+            node.textContent = cell.value;
+          }
+        }
+      }
+    }
+
+    // The world frame is the viewer's, not the model's: in this viewer the scene is
+    // Y-up while the robot base is a rotated child of it, so the two frames give
+    // genuinely different numbers for the same pose.
+    const hint = readout.origin === "World" ? "World is the viewer's Y-up scene frame." : "";
+    this.poseNoteEl.textContent = [readout.note, hint].filter(Boolean).join(" ");
   }
 
   private emitIkOffset(): void {

@@ -6,6 +6,13 @@ import { loadMesh } from "./meshLoader";
 import { ViewGizmo } from "./viewGizmo";
 import { IkGizmo, type IkHandles } from "./ikGizmo";
 import { solveIk, tcpPose, type IkTarget, type TcpSpec } from "./ikSolver";
+import {
+  buildReadout,
+  poseInFrame,
+  type EulerOrder,
+  type PoseReadout,
+  type PoseRepresentation,
+} from "./poseFormat";
 import type { JointValues, ViewerSettings, SceneConfig } from "../src/protocol";
 
 export interface JointInfo {
@@ -40,6 +47,15 @@ export interface IkSettings {
 
 const DEFAULTS_IK_ACCEPT_POS = 3e-3; // metres
 const DEFAULTS_IK_ACCEPT_ROT = 0.25; // radians
+
+/** What the pose readout shows and which frame it measures in. */
+export interface PoseDisplaySettings {
+  /** "World", "Base", or the name of any link in the model. */
+  origin: string;
+  representation: PoseRepresentation;
+  /** Only read while `representation` is "euler". */
+  eulerOrder: EulerOrder;
+}
 
 export class Viewer {
   readonly scene = new THREE.Scene();
@@ -85,6 +101,7 @@ export class Viewer {
 
   onJointChange?: (values: JointValues) => void;
   onIkStatus?: (status: IkStatus) => void;
+  onPoseUpdate?: (readout: PoseReadout) => void;
 
   // Interactive IK state. The handle is always re-seated on the pose the robot
   // actually holds, so no separate "last good pose" bookkeeping is needed: an
@@ -95,6 +112,15 @@ export class Viewer {
     link: "",
     offset: [0, 0, 0],
     handleSize: 1,
+  };
+
+  // The readout is a pure function of the robot's pose, so nothing about it is
+  // cached here beyond the two choices the panel owns. "Base" is the default
+  // because that is the frame the IK handle's arrows are drawn in.
+  private readonly poseDisplay: PoseDisplaySettings = {
+    origin: "Base",
+    representation: "rpy",
+    eulerOrder: "ZYX",
   };
 
   constructor(private readonly canvas: HTMLCanvasElement) {
@@ -524,7 +550,7 @@ export class Viewer {
 
   setJoint(name: string, value: number): void {
     this.robot?.setJointValue(name, value);
-    this.syncIkHandle();
+    this.afterRobotPoseChanged();
   }
 
   setJoints(values: JointValues): void {
@@ -534,7 +560,7 @@ export class Viewer {
     for (const [name, value] of Object.entries(values)) {
       this.robot.setJointValue(name, value);
     }
-    this.syncIkHandle();
+    this.afterRobotPoseChanged();
   }
 
   getJointValues(): JointValues {
@@ -583,7 +609,7 @@ export class Viewer {
       });
       return;
     }
-    this.syncIkHandle();
+    this.afterRobotPoseChanged();
   }
 
   /** Show both handles at once, or filter down to one of them (W / E / Q). */
@@ -595,13 +621,13 @@ export class Viewer {
   setIkTcpLink(name: string): void {
     this.ik.link = name;
     this.ikGizmo.setEnabled(this.ik.enabled && name !== "");
-    this.syncIkHandle();
+    this.afterRobotPoseChanged();
   }
 
   /** Tool offset in millimetres, as typed into the panel. */
   setIkToolOffset(x: number, y: number, z: number): void {
     this.ik.offset = [x / 1000, y / 1000, z / 1000];
-    this.syncIkHandle();
+    this.afterRobotPoseChanged();
   }
 
   setIkHandleSize(factor: number): void {
@@ -611,6 +637,86 @@ export class Viewer {
 
   private tcpSpec(): TcpSpec {
     return { link: this.ik.link, offset: new THREE.Vector3(...this.ik.offset) };
+  }
+
+  // ---- End-effector pose readout --------------------------------------------
+
+  getPoseDisplay(): PoseDisplaySettings {
+    return { ...this.poseDisplay };
+  }
+
+  /** "World", "Base", then every link in the model - the frames worth measuring in. */
+  poseOriginOptions(): string[] {
+    return ["World", "Base", ...Object.keys(this.robotLinks())];
+  }
+
+  setPoseOrigin(origin: string): void {
+    this.poseDisplay.origin = origin;
+    this.refreshPose();
+  }
+
+  setPoseRepresentation(representation: PoseRepresentation, eulerOrder: EulerOrder): void {
+    this.poseDisplay.representation = representation;
+    this.poseDisplay.eulerOrder = eulerOrder;
+    this.refreshPose();
+  }
+
+  /**
+   * The chosen origin, fallen back to "Base" when it names a link the model no
+   * longer has: a freshly loaded model need not keep the old link names, and a
+   * stale selection would otherwise leave the readout blank with no explanation.
+   */
+  private resolvePoseOrigin(): string {
+    const { origin } = this.poseDisplay;
+    if (origin === "World" || origin === "Base" || this.robotLinks()[origin]) {
+      return origin;
+    }
+    this.poseDisplay.origin = "Base";
+    return "Base";
+  }
+
+  private poseOriginObject(origin: string): THREE.Object3D | null {
+    if (origin === "World") {
+      return null; // the world frame is the identity
+    }
+    if (origin === "Base") {
+      // robotRoot, not the URDF's base link: this is the node the IK handle's proxy
+      // is parented to, so the readout and the drag arrows describe one frame.
+      return this.robotRoot;
+    }
+    return this.robotLinks()[origin] ?? null;
+  }
+
+  /** TCP pose in the chosen origin frame, or null when there is no TCP to measure. */
+  private tcpPoseInFrame(origin: string): IkTarget | null {
+    if (!this.robot || this.ik.link === "") {
+      return null;
+    }
+    return poseInFrame(tcpPose(this.robot, this.tcpSpec()), this.poseOriginObject(origin));
+  }
+
+  /**
+   * Push the current TCP pose to the panel. Everything that can change the pose
+   * goes through afterRobotPoseChanged(), so this never has to poll.
+   */
+  private refreshPose(): void {
+    const origin = this.resolvePoseOrigin();
+    const pose = this.tcpPoseInFrame(origin);
+    if (!pose) {
+      this.onPoseUpdate?.({ origin, groups: [], note: "no TCP link" });
+      return;
+    }
+    this.onPoseUpdate?.(buildReadout(pose, origin, this.poseDisplay));
+  }
+
+  /**
+   * One entry point for "the robot's pose may have changed": re-seat the IK handle
+   * and refresh the readout together, so a new joint-change path cannot remember
+   * one and forget the other.
+   */
+  private afterRobotPoseChanged(): void {
+    this.syncIkHandle();
+    this.refreshPose();
   }
 
   private robotLinks(): Record<string, THREE.Object3D> {
@@ -660,6 +766,9 @@ export class Viewer {
       return;
     }
     this.onIkStatus?.({ reachable: true, posErr: res.posErr, rotErr: res.rotErr });
+    // Not afterRobotPoseChanged(): the handle is mid-drag, so syncIkHandle() bails
+    // out - but the readout still has to follow the arm.
+    this.refreshPose();
     this.onJointChange?.(this.getJointValues());
   }
 
@@ -694,7 +803,7 @@ export class Viewer {
       this.ik.link = this.defaultIkTcpLink(leaves);
     }
     this.ikGizmo.setEnabled(this.ik.enabled && this.ik.link !== "");
-    this.syncIkHandle();
+    this.afterRobotPoseChanged();
   }
 
   private defaultIkTcpLink(leaves: string[]): string {

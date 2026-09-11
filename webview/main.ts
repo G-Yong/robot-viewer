@@ -82,12 +82,16 @@ function bootstrap(): void {
     onIkTcpLink: (link) => viewer.setIkTcpLink(link),
     onIkToolOffset: (x, y, z) => viewer.setIkToolOffset(x, y, z),
     onIkHandleSize: (factor) => viewer.setIkHandleSize(factor),
+    onIkPoseOrigin: (origin) => viewer.setPoseOrigin(origin),
+    onIkPoseFormat: (representation, eulerOrder) =>
+      viewer.setPoseRepresentation(representation, eulerOrder),
   });
 
   // Joint values changed by something other than the sliders (an IK drag, a
   // loaded scene): keep the sidebar in step.
   viewer.onJointChange = (values) => ui.updateJointValues(values);
   viewer.onIkStatus = (status) => ui.updateIkStatus(status);
+  viewer.onPoseUpdate = (readout) => ui.updatePose(readout);
 
   // Restore a previously saved OPC UA configuration, if any.
   const saved = getState<PersistedState>();
