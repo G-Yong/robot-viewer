@@ -5,6 +5,9 @@
   --text: #e6edf3;
   --text-dim: #9aa4af;
   --sidebar-width: 330px;
+  /* Keeps the browser's own bits (checkbox, scrollbars, select popup) dark, so
+     the panel does not look like two different applications. */
+  color-scheme: dark;
 }
 
 * {
@@ -170,11 +173,21 @@ body,
   align-items: center;
   gap: 8px;
   margin: 6px 0;
+  min-width: 0;
 }
 
 .row label {
   flex: 0 0 auto;
   color: var(--text-dim);
+}
+
+/* A control in a row shares the leftover width instead of holding its intrinsic
+   size - without this the three tool-offset boxes push past the panel edge and
+   the last one is clipped. Checkboxes and the slider keep their own sizing. */
+.row > input:not([type="checkbox"]):not([type="range"]):not([type="color"]),
+.row > select {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .joint-row {
@@ -203,6 +216,71 @@ body,
 input[type="range"] {
   width: 100%;
   accent-color: var(--accent);
+}
+
+/* Text, number and select controls ------------------------------------------ */
+/* One rule for the whole panel. The rows are not all `.field` - the IK and Render
+   tabs use a plain `.row` - and a control that no rule matches falls back to the
+   browser's white box, which reads as a different application next to the rest of
+   the sidebar. Keep this the single place that decides how they look. */
+#sidebar input[type="text"],
+#sidebar input[type="number"],
+#sidebar select {
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+#sidebar input[type="text"]:hover,
+#sidebar input[type="number"]:hover,
+#sidebar select:hover {
+  border-color: rgba(255, 255, 255, 0.24);
+}
+
+#sidebar input[type="text"]:focus,
+#sidebar input[type="number"]:focus,
+#sidebar select:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* The spinner is a light-themed native artefact that cannot be tinted, and its
+   step buttons are too small to hit at this size - typing is faster. */
+#sidebar input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+#sidebar input[type="number"]::-webkit-outer-spin-button,
+#sidebar input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Caret drawn by hand, so it matches the theme instead of the OS. */
+#sidebar select {
+  appearance: none;
+  padding-right: 22px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.8 6 7.8l3-3' fill='none' stroke='%239aa4af' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 5px center;
+  background-size: 12px 12px;
+}
+
+#sidebar select option {
+  background: #1c2026;
+  color: var(--text);
+}
+
+#sidebar input[type="checkbox"] {
+  accent-color: var(--accent);
+  margin: 0;
 }
 
 button.action {
@@ -251,12 +329,6 @@ input[type="color"] {
 .field select {
   flex: 1 1 auto;
   min-width: 0;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--panel-border);
-  color: var(--text);
-  border-radius: 4px;
-  padding: 3px 6px;
-  font-size: 12px;
 }
 
 .note {

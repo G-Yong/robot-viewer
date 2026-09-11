@@ -310,17 +310,20 @@ export class UI {
       this.sliderRow("Handle size", 0.4, 3, s.handleSize, (v) => this.cb.onIkHandleSize(v))
     );
 
-    this.ikStatusEl = el("div", { class: "hint" }, [""]);
+    // `.note`, not `.hint`: `.hint` is the absolutely positioned caption that sits
+    // on the canvas, so anything using it here would float over the viewport
+    // instead of staying in the panel.
+    this.ikStatusEl = el("div", { class: "note" }, [""]);
     body.appendChild(this.ikStatusEl);
     // The arrows and the rings are both on screen; these keys only filter them
     // down, which is what the old Handle dropdown used to do.
     body.appendChild(
-      el("div", { class: "hint" }, [
+      el("div", { class: "note" }, [
         "Drag an arrow to move the TCP, a ring to turn it about the base axes.",
       ])
     );
     body.appendChild(
-      el("div", { class: "hint" }, ["W move only • E rotate only • Q both"])
+      el("div", { class: "note" }, ["W move only • E rotate only • Q both"])
     );
 
     this.populateIkLinks();
