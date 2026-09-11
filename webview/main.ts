@@ -15,6 +15,13 @@ interface PersistedState {
   opcua?: OpcuaConfig;
 }
 
+/** Keyboard shortcuts that filter the IK handles. See the keydown handler below. */
+const IK_HANDLE_KEYS: Record<string, "both" | "translate" | "rotate"> = {
+  w: "translate",
+  e: "rotate",
+  q: "both",
+};
+
 function injectStyles(): void {
   const style = document.createElement("style");
   style.textContent = styles as unknown as string;
@@ -72,7 +79,6 @@ function bootstrap(): void {
       setState(state);
     },
     onIkEnabled: (enabled) => viewer.setIkEnabled(enabled),
-    onIkMode: (mode) => viewer.setIkMode(mode),
     onIkTcpLink: (link) => viewer.setIkTcpLink(link),
     onIkToolOffset: (x, y, z) => viewer.setIkToolOffset(x, y, z),
     onIkHandleSize: (factor) => viewer.setIkHandleSize(factor),
@@ -152,6 +158,28 @@ function bootstrap(): void {
       e.preventDefault();
       saveScene();
     }
+  });
+
+  // W / E / Q filter the IK handles (move only / rotate only / both) without
+  // reaching for the panel - the arrows and the rings are shown together, so
+  // these only ever narrow that down. Ignored with a modifier held and while the
+  // focus sits in a panel field, so typing never toggles anything.
+  document.addEventListener("keydown", (e) => {
+    const target = e.target as HTMLElement | null;
+    const typing =
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLSelectElement ||
+      target instanceof HTMLTextAreaElement ||
+      Boolean(target?.isContentEditable);
+    if (typing || e.ctrlKey || e.metaKey || e.altKey) {
+      return;
+    }
+    const handles = IK_HANDLE_KEYS[e.key.toLowerCase()];
+    if (!handles) {
+      return;
+    }
+    e.preventDefault();
+    viewer.setIkHandles(handles);
   });
 
   // Automation seam for the offline UI harness (tools/uiHarness.html), which

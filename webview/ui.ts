@@ -1,5 +1,4 @@
 import type { Viewer, JointInfo, IkStatus } from "./viewer";
-import type { IkGizmoMode as IkMode } from "./ikGizmo";
 import type {
   ViewerSettings,
   JointValues,
@@ -19,7 +18,6 @@ export interface UICallbacks {
   onOpcuaConfigChange?: (config: OpcuaConfig) => void;
   // Interactive IK (drag the end-effector).
   onIkEnabled: (enabled: boolean) => void;
-  onIkMode: (mode: IkMode) => void;
   onIkTcpLink: (link: string) => void;
   /** Tool offset as typed: millimetres, in the TCP link's frame. */
   onIkToolOffset: (x: number, y: number, z: number) => void;
@@ -66,7 +64,6 @@ export class UI {
   private opcuaConnected = false;
 
   private ikEnabledInput!: HTMLInputElement;
-  private ikModeSelect!: HTMLSelectElement;
   private ikLinkSelect!: HTMLSelectElement;
   private ikOffsetInputs: HTMLInputElement[] = [];
   private ikStatusEl!: HTMLElement;
@@ -282,17 +279,6 @@ export class UI {
       ])
     );
 
-    this.ikModeSelect = el("select", {}, [
-      option("translate", "Translate", s.mode === "translate"),
-      option("rotate", "Rotate", s.mode === "rotate"),
-    ]) as HTMLSelectElement;
-    this.ikModeSelect.addEventListener("change", () =>
-      this.cb.onIkMode(this.ikModeSelect.value as IkMode)
-    );
-    body.appendChild(
-      el("div", { class: "row" }, [el("label", {}, ["Handle"]), this.ikModeSelect])
-    );
-
     this.ikLinkSelect = el("select", {}) as HTMLSelectElement;
     this.ikLinkSelect.addEventListener("change", () =>
       this.cb.onIkTcpLink(this.ikLinkSelect.value)
@@ -326,8 +312,16 @@ export class UI {
 
     this.ikStatusEl = el("div", { class: "hint" }, [""]);
     body.appendChild(this.ikStatusEl);
-    this.ikStatusEl.textContent =
-      "Drag an arrow to move the TCP, a ring to turn it about the tool axis.";
+    // The arrows and the rings are both on screen; these keys only filter them
+    // down, which is what the old Handle dropdown used to do.
+    body.appendChild(
+      el("div", { class: "hint" }, [
+        "Drag an arrow to move the TCP, a ring to turn it about the base axes.",
+      ])
+    );
+    body.appendChild(
+      el("div", { class: "hint" }, ["W move only • E rotate only • Q both"])
+    );
 
     this.populateIkLinks();
   }

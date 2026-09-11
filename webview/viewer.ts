@@ -4,7 +4,7 @@ import URDFLoader from "urdf-loader";
 import type { URDFRobot, URDFJoint } from "urdf-loader";
 import { loadMesh } from "./meshLoader";
 import { ViewGizmo } from "./viewGizmo";
-import { IkGizmo, type IkGizmoMode } from "./ikGizmo";
+import { IkGizmo, type IkHandles } from "./ikGizmo";
 import { solveIk, tcpPose, type IkTarget, type TcpSpec } from "./ikSolver";
 import type { JointValues, ViewerSettings, SceneConfig } from "../src/protocol";
 
@@ -28,7 +28,8 @@ export interface IkStatus {
 
 export interface IkSettings {
   enabled: boolean;
-  mode: IkGizmoMode;
+  /** Which handle sets are on screen: both (default), arrows only, rings only. */
+  handles: IkHandles;
   /** TCP link name ("" until a model is loaded). */
   link: string;
   /** Tool offset in metres, in the TCP link's frame. */
@@ -90,7 +91,7 @@ export class Viewer {
   // unreachable drag leaves the robot where it was, and releasing snaps back.
   private readonly ik: IkSettings = {
     enabled: false,
-    mode: "translate",
+    handles: "both",
     link: "",
     offset: [0, 0, 0],
     handleSize: 1,
@@ -585,9 +586,10 @@ export class Viewer {
     this.syncIkHandle();
   }
 
-  setIkMode(mode: IkGizmoMode): void {
-    this.ik.mode = mode;
-    this.ikGizmo.setMode(mode);
+  /** Show both handles at once, or filter down to one of them (W / E / Q). */
+  setIkHandles(handles: IkHandles): void {
+    this.ik.handles = handles;
+    this.ikGizmo.setHandles(handles);
   }
 
   setIkTcpLink(name: string): void {
