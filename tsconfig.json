@@ -12,6 +12,6 @@
     "skipLibCheck": true,
     "resolveJsonModule": true
   },
-  "include": ["src", "webview"],
+  "include": ["src", "webview", "tools"],
   "exclude": ["node_modules", "dist"]
 }

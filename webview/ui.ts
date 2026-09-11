@@ -1,4 +1,5 @@
-import type { Viewer, JointInfo } from "./viewer";
+import type { Viewer, JointInfo, IkStatus } from "./viewer";
+import type { IkGizmoMode as IkMode } from "./ikGizmo";
 import type {
   ViewerSettings,
   JointValues,
@@ -16,6 +17,13 @@ export interface UICallbacks {
   onLoadScene: () => void;
   onToggleOpcua: () => void;
   onOpcuaConfigChange?: (config: OpcuaConfig) => void;
+  // Interactive IK (drag the end-effector).
+  onIkEnabled: (enabled: boolean) => void;
+  onIkMode: (mode: IkMode) => void;
+  onIkTcpLink: (link: string) => void;
+  /** Tool offset as typed: millimetres, in the TCP link's frame. */
+  onIkToolOffset: (x: number, y: number, z: number) => void;
+  onIkHandleSize: (factor: number) => void;
 }
 
 const RAD2DEG = 180 / Math.PI;
@@ -57,6 +65,12 @@ export class UI {
   private liveCells = new Map<string, { dot: HTMLElement; value: HTMLElement }>();
   private opcuaConnected = false;
 
+  private ikEnabledInput!: HTMLInputElement;
+  private ikModeSelect!: HTMLSelectElement;
+  private ikLinkSelect!: HTMLSelectElement;
+  private ikOffsetInputs: HTMLInputElement[] = [];
+  private ikStatusEl!: HTMLElement;
+
   private opcua: OpcuaConfig = defaultOpcuaConfig();
   private opcuaUserModified = false;
   private opcuaFields: Record<string, HTMLInputElement | HTMLSelectElement> = {};
@@ -93,6 +107,7 @@ export class UI {
 
     this.addTab("joints", "Joints", (b) => this.fillJoints(b), true);
     this.addTab("camera", "Camera", (b) => this.fillCamera(b));
+    this.addTab("ik", "IK", (b) => this.fillIk(b));
     this.addTab("render", "Render", (b) => this.fillRender(b));
     this.addTab("scene", "Scene", (b) => this.fillScene(b));
     this.addTab("opcua", "OPC UA", (b) => this.fillOpcua(b));
@@ -220,6 +235,8 @@ export class UI {
     }
 
     this.rebuildJointMappings(joints.map((j) => j.name));
+    // A new model means new TCP candidates: the viewer has already chosen one.
+    this.populateIkLinks();
   }
 
   private fmt(j: JointInfo): string {
@@ -247,6 +264,95 @@ export class UI {
     const reset = el("button", { class: "action secondary" }, ["Reset / Fit View"]);
     reset.addEventListener("click", () => this.cb.onResetCamera());
     body.appendChild(el("div", { class: "row" }, [reset]));
+  }
+
+  // ---- IK tab ---------------------------------------------------------------
+  private fillIk(body: HTMLElement): void {
+    const s = this.viewer.getIkSettings();
+
+    this.ikEnabledInput = el("input", { type: "checkbox" }) as HTMLInputElement;
+    this.ikEnabledInput.checked = s.enabled;
+    this.ikEnabledInput.addEventListener("change", () =>
+      this.cb.onIkEnabled(this.ikEnabledInput.checked)
+    );
+    body.appendChild(
+      el("div", { class: "row" }, [
+        this.ikEnabledInput,
+        el("label", {}, ["Drag end-effector (IK)"]),
+      ])
+    );
+
+    this.ikModeSelect = el("select", {}, [
+      option("translate", "Translate", s.mode === "translate"),
+      option("rotate", "Rotate", s.mode === "rotate"),
+    ]) as HTMLSelectElement;
+    this.ikModeSelect.addEventListener("change", () =>
+      this.cb.onIkMode(this.ikModeSelect.value as IkMode)
+    );
+    body.appendChild(
+      el("div", { class: "row" }, [el("label", {}, ["Handle"]), this.ikModeSelect])
+    );
+
+    this.ikLinkSelect = el("select", {}) as HTMLSelectElement;
+    this.ikLinkSelect.addEventListener("change", () =>
+      this.cb.onIkTcpLink(this.ikLinkSelect.value)
+    );
+    body.appendChild(
+      el("div", { class: "row" }, [el("label", {}, ["TCP link"]), this.ikLinkSelect])
+    );
+
+    // The offset is stored in metres but typed in millimetres: a tool frame sits
+    // tens of millimetres off the wrist, where mm is the readable unit.
+    this.ikOffsetInputs = ["X", "Y", "Z"].map((axis) => {
+      const input = el("input", {
+        type: "number",
+        step: "1",
+        value: "0",
+        title: `Tool offset ${axis} [mm]`,
+      }) as HTMLInputElement;
+      input.addEventListener("input", () => this.emitIkOffset());
+      return input;
+    });
+    body.appendChild(
+      el("div", { class: "row" }, [
+        el("label", {}, ["Tool offset [mm]"]),
+        ...this.ikOffsetInputs,
+      ])
+    );
+
+    body.appendChild(
+      this.sliderRow("Handle size", 0.4, 3, s.handleSize, (v) => this.cb.onIkHandleSize(v))
+    );
+
+    this.ikStatusEl = el("div", { class: "hint" }, [""]);
+    body.appendChild(this.ikStatusEl);
+    this.ikStatusEl.textContent =
+      "Drag an arrow to move the TCP, a ring to turn it about the tool axis.";
+
+    this.populateIkLinks();
+  }
+
+  private emitIkOffset(): void {
+    const [x, y, z] = this.ikOffsetInputs.map((input) => Number(input.value) || 0);
+    this.cb.onIkToolOffset(x, y, z);
+  }
+
+  /** Rebuild the TCP candidate list from the model that is loaded now. */
+  populateIkLinks(): void {
+    const current = this.viewer.getIkSettings().link;
+    const links = this.viewer.ikTcpLinkOptions();
+    this.ikLinkSelect.replaceChildren(...links.map((name) => option(name, name, name === current)));
+  }
+
+  updateIkStatus(status: IkStatus): void {
+    if (status.reason) {
+      this.ikStatusEl.textContent = status.reason;
+      return;
+    }
+    const posMm = status.posErr * 1000;
+    this.ikStatusEl.textContent = status.reachable
+      ? `pos ${posMm.toFixed(1)} mm • rot ${status.rotErr.toFixed(3)} rad`
+      : `out of reach — holding the last pose (pos ${posMm.toFixed(0)} mm)`;
   }
 
   // ---- Rendering tab --------------------------------------------------------

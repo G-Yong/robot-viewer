@@ -28,6 +28,8 @@
 
 仓库中的 [`samples/simple_arm.urdf`](samples/simple_arm.urdf) 是一个可直接运行的示例——它只用基本几何体，无需任何外部网格文件。
 
+[`samples/dual_arm.urdf`](samples/dual_arm.urdf) 是同一思路的**双臂**示例：一个 URDF 里包含两条互不相干的机械臂，用于验证“拖动其中一个末端时另一个末端保持不动”。两个示例都会被离线检查脚本使用（`npm run check:ik`，以及 `tools/uiHarness.html?model=samples/dual_arm.urdf`）。
+
 ## 命令
 
 | 命令 | 说明 |

@@ -1,0 +1,166 @@
+<?xml version="1.0"?>
+<!-- Two independent 3-DOF arms hanging off one fixed world link, primitive
+     geometry only (like simple_arm.urdf, so no package resources are needed).
+
+     This is the shape of the machines that actually get loaded - one URDF, two
+     end effectors, no kinematic relationship between them. It exists to pin down
+     one property: dragging one gripper must leave the other exactly where it is.
+     See checkIndependentArms() in tools/ikCheck.ts. -->
+<robot name="dual_arm">
+  <material name="base_color">
+    <color rgba="0.30 0.35 0.40 1.0"/>
+  </material>
+  <material name="link_color">
+    <color rgba="0.20 0.60 0.86 1.0"/>
+  </material>
+  <material name="left_tip_color">
+    <color rgba="0.95 0.55 0.20 1.0"/>
+  </material>
+  <material name="right_tip_color">
+    <color rgba="0.85 0.25 0.45 1.0"/>
+  </material>
+
+  <link name="world"/>
+
+  <!-- left arm -->
+  <joint name="world_to_base_L" type="fixed">
+    <parent link="world"/>
+    <child link="base_L"/>
+    <origin xyz="-0.25 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="base_L">
+    <visual>
+      <origin xyz="0 0 0.05" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.12" length="0.10"/>
+      </geometry>
+      <material name="base_color"/>
+    </visual>
+  </link>
+
+  <link name="link1_L">
+    <visual>
+      <origin xyz="0 0 0.20" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.08 0.08 0.40"/>
+      </geometry>
+      <material name="link_color"/>
+    </visual>
+  </link>
+
+  <link name="link2_L">
+    <visual>
+      <origin xyz="0 0 0.15" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.06 0.06 0.30"/>
+      </geometry>
+      <material name="link_color"/>
+    </visual>
+  </link>
+
+  <link name="tool_L">
+    <visual>
+      <origin xyz="0 0 0.05" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.05"/>
+      </geometry>
+      <material name="left_tip_color"/>
+    </visual>
+  </link>
+
+  <joint name="shoulder_yaw_L" type="revolute">
+    <parent link="base_L"/>
+    <child link="link1_L"/>
+    <origin xyz="0 0 0.10" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.14159" upper="3.14159" effort="10" velocity="1.0"/>
+  </joint>
+
+  <joint name="elbow_pitch_L" type="revolute">
+    <parent link="link1_L"/>
+    <child link="link2_L"/>
+    <origin xyz="0 0 0.40" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-1.57" upper="1.57" effort="10" velocity="1.0"/>
+  </joint>
+
+  <joint name="wrist_pitch_L" type="revolute">
+    <parent link="link2_L"/>
+    <child link="tool_L"/>
+    <origin xyz="0 0 0.30" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-1.57" upper="1.57" effort="10" velocity="1.0"/>
+  </joint>
+
+  <!-- right arm -->
+  <joint name="world_to_base_R" type="fixed">
+    <parent link="world"/>
+    <child link="base_R"/>
+    <origin xyz="0.25 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="base_R">
+    <visual>
+      <origin xyz="0 0 0.05" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.12" length="0.10"/>
+      </geometry>
+      <material name="base_color"/>
+    </visual>
+  </link>
+
+  <link name="link1_R">
+    <visual>
+      <origin xyz="0 0 0.20" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.08 0.08 0.40"/>
+      </geometry>
+      <material name="link_color"/>
+    </visual>
+  </link>
+
+  <link name="link2_R">
+    <visual>
+      <origin xyz="0 0 0.15" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.06 0.06 0.30"/>
+      </geometry>
+      <material name="link_color"/>
+    </visual>
+  </link>
+
+  <link name="tool_R">
+    <visual>
+      <origin xyz="0 0 0.05" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="0.05"/>
+      </geometry>
+      <material name="right_tip_color"/>
+    </visual>
+  </link>
+
+  <joint name="shoulder_yaw_R" type="revolute">
+    <parent link="base_R"/>
+    <child link="link1_R"/>
+    <origin xyz="0 0 0.10" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.14159" upper="3.14159" effort="10" velocity="1.0"/>
+  </joint>
+
+  <joint name="elbow_pitch_R" type="revolute">
+    <parent link="link1_R"/>
+    <child link="link2_R"/>
+    <origin xyz="0 0 0.40" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-1.57" upper="1.57" effort="10" velocity="1.0"/>
+  </joint>
+
+  <joint name="wrist_pitch_R" type="revolute">
+    <parent link="link2_R"/>
+    <child link="tool_R"/>
+    <origin xyz="0 0 0.30" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-1.57" upper="1.57" effort="10" velocity="1.0"/>
+  </joint>
+</robot>

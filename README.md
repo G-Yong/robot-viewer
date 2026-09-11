@@ -28,6 +28,8 @@ Supported mesh formats: **STL**, **Collada (.dae)**, **OBJ**, **glTF/GLB**.
 
 A ready-to-run example lives in [`samples/simple_arm.urdf`](samples/simple_arm.urdf) — it uses only primitive geometry, so no external meshes are required.
 
+[`samples/dual_arm.urdf`](samples/dual_arm.urdf) is the same idea for a model with **two independent arms** in one file, which is the case to reach for when checking that dragging one end effector leaves the other one alone. Both samples are loaded by the offline harness (`npm run check:ik` and `tools/uiHarness.html?model=samples/dual_arm.urdf`).
+
 ## Commands
 
 | Command | Description |

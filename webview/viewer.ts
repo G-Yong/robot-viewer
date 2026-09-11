@@ -4,6 +4,8 @@ import URDFLoader from "urdf-loader";
 import type { URDFRobot, URDFJoint } from "urdf-loader";
 import { loadMesh } from "./meshLoader";
 import { ViewGizmo } from "./viewGizmo";
+import { IkGizmo, type IkGizmoMode } from "./ikGizmo";
+import { solveIk, tcpPose, type IkTarget, type TcpSpec } from "./ikSolver";
 import type { JointValues, ViewerSettings, SceneConfig } from "../src/protocol";
 
 export interface JointInfo {
@@ -13,6 +15,30 @@ export interface JointInfo {
   upper: number;
   value: number;
 }
+
+/** What the IK panel shows under the controls. */
+export interface IkStatus {
+  /** False while the handle is dragged somewhere the robot cannot follow. */
+  reachable: boolean;
+  posErr: number;
+  rotErr: number;
+  /** Set instead of the residuals when IK cannot run at all. */
+  reason?: string;
+}
+
+export interface IkSettings {
+  enabled: boolean;
+  mode: IkGizmoMode;
+  /** TCP link name ("" until a model is loaded). */
+  link: string;
+  /** Tool offset in metres, in the TCP link's frame. */
+  offset: [number, number, number];
+  /** Handle size multiplier passed to TransformControls.setSize(). */
+  handleSize: number;
+}
+
+const DEFAULTS_IK_ACCEPT_POS = 3e-3; // metres
+const DEFAULTS_IK_ACCEPT_ROT = 0.25; // radians
 
 export class Viewer {
   readonly scene = new THREE.Scene();
@@ -53,9 +79,22 @@ export class Viewer {
   private readonly axesParent = new THREE.Group();
 
   private gizmo!: ViewGizmo;
+  private ikGizmo!: IkGizmo;
   private readonly clock = new THREE.Clock();
 
   onJointChange?: (values: JointValues) => void;
+  onIkStatus?: (status: IkStatus) => void;
+
+  // Interactive IK state. The handle is always re-seated on the pose the robot
+  // actually holds, so no separate "last good pose" bookkeeping is needed: an
+  // unreachable drag leaves the robot where it was, and releasing snaps back.
+  private readonly ik: IkSettings = {
+    enabled: false,
+    mode: "translate",
+    link: "",
+    offset: [0, 0, 0],
+    handleSize: 1,
+  };
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -97,6 +136,13 @@ export class Viewer {
     this.scene.add(this.robotRoot);
 
     this.gizmo = new ViewGizmo(this.camera, this.controls, this.canvas);
+    // Interactive end-effector handle: its proxy lives in the robot base frame,
+    // so the pose it reports is already a URDF-frame pose, and OrbitControls is
+    // passed in so the gizmo can lock the camera while a handle is dragged.
+    this.ikGizmo = new IkGizmo(this.scene, this.robotRoot, this.camera, this.canvas, this.controls, {
+      onDrag: (position, quaternion) => this.handleIkDrag(position, quaternion),
+      onDragEnd: () => this.syncIkHandle(),
+    });
     // Capture phase so a gizmo click pre-empts OrbitControls' orbit start.
     this.canvas.addEventListener(
       "pointerdown",
@@ -187,6 +233,8 @@ export class Viewer {
 
     // Fit once immediately (links exist even before meshes finish loading).
     setTimeout(() => this.fitCamera(), 50);
+
+    this.resetIkAfterLoad();
 
     return this.getJoints();
   }
@@ -475,6 +523,7 @@ export class Viewer {
 
   setJoint(name: string, value: number): void {
     this.robot?.setJointValue(name, value);
+    this.syncIkHandle();
   }
 
   setJoints(values: JointValues): void {
@@ -484,6 +533,7 @@ export class Viewer {
     for (const [name, value] of Object.entries(values)) {
       this.robot.setJointValue(name, value);
     }
+    this.syncIkHandle();
   }
 
   getJointValues(): JointValues {
@@ -498,6 +548,182 @@ export class Viewer {
       }
     }
     return out;
+  }
+
+  // ---- Interactive IK -------------------------------------------------------
+
+  getIkSettings(): IkSettings {
+    return { ...this.ik, offset: [...this.ik.offset] as [number, number, number] };
+  }
+
+  /** Links that end a kinematic chain - the sensible TCP candidates. */
+  ikTcpLinkOptions(): string[] {
+    const leaves: string[] = [];
+    for (const [name, link] of Object.entries(this.robotLinks())) {
+      const hasJointChild = link.children.some((child) =>
+        Boolean((child as unknown as { isURDFJoint?: boolean }).isURDFJoint)
+      );
+      if (!hasJointChild) {
+        leaves.push(name);
+      }
+    }
+    return leaves;
+  }
+
+  setIkEnabled(on: boolean): void {
+    this.ik.enabled = on;
+    this.ikGizmo.setEnabled(on && this.ik.link !== "");
+    if (on && this.ik.link === "") {
+      this.onIkStatus?.({
+        reachable: false,
+        posErr: 0,
+        rotErr: 0,
+        reason: "no movable joints in this model",
+      });
+      return;
+    }
+    this.syncIkHandle();
+  }
+
+  setIkMode(mode: IkGizmoMode): void {
+    this.ik.mode = mode;
+    this.ikGizmo.setMode(mode);
+  }
+
+  setIkTcpLink(name: string): void {
+    this.ik.link = name;
+    this.ikGizmo.setEnabled(this.ik.enabled && name !== "");
+    this.syncIkHandle();
+  }
+
+  /** Tool offset in millimetres, as typed into the panel. */
+  setIkToolOffset(x: number, y: number, z: number): void {
+    this.ik.offset = [x / 1000, y / 1000, z / 1000];
+    this.syncIkHandle();
+  }
+
+  setIkHandleSize(factor: number): void {
+    this.ik.handleSize = factor;
+    this.ikGizmo.setSize(factor);
+  }
+
+  private tcpSpec(): TcpSpec {
+    return { link: this.ik.link, offset: new THREE.Vector3(...this.ik.offset) };
+  }
+
+  private robotLinks(): Record<string, THREE.Object3D> {
+    return (
+      (this.robot as unknown as { links?: Record<string, THREE.Object3D> })?.links ?? {}
+    );
+  }
+
+  /**
+   * Put the handle on the TCP the robot currently holds. Called whenever a joint
+   * changes for any reason (slider, scene, IK drag end), which is also what makes
+   * the handle spring back onto the arm after a drag that went out of reach.
+   */
+  private syncIkHandle(): void {
+    if (!this.robot || !this.ik.enabled || this.ik.link === "" || this.ikGizmo.isDragging()) {
+      return;
+    }
+    const pose = tcpPose(this.robot, this.tcpSpec());
+    const local = this.worldToBase(pose);
+    this.ikGizmo.setTarget(local.position, local.quaternion);
+  }
+
+  private handleIkDrag(position: THREE.Vector3, quaternion: THREE.Quaternion): void {
+    if (!this.robot || this.ik.link === "") {
+      return;
+    }
+    const before = this.getJointValues();
+    const target = this.baseToWorld({ position, quaternion });
+    // Start from the pose the arm is actually in. The solver's default start is
+    // every joint at zero, which would snap the arm to a zero-ish configuration
+    // on the first drag event instead of moving it the few millimetres the mouse
+    // asked for.
+    const res = solveIk(this.robot, this.tcpSpec(), target, { start: before });
+    // Acceptance is looser than the solver's own tolerance on purpose: an arm with
+    // fewer than six joints can only hit a slice of the poses you can drag to (a
+    // 3-DOF arm translating with a fixed orientation has a 1-D curve of exact
+    // solutions, for instance), and the nearest point on that curve is the right
+    // answer. Only a target the arm genuinely cannot approach is refused.
+    const usable =
+      res.posErr <= DEFAULTS_IK_ACCEPT_POS && res.rotErr <= DEFAULTS_IK_ACCEPT_ROT;
+    if (!usable) {
+      // The robot stays on the last pose it can hold. The drag itself is not
+      // blocked - the handle keeps following the mouse - so the user can feel the
+      // edge of the workspace instead of having the handle freeze.
+      this.setJoints(before);
+      this.onIkStatus?.({ reachable: false, posErr: res.posErr, rotErr: res.rotErr });
+      return;
+    }
+    this.onIkStatus?.({ reachable: true, posErr: res.posErr, rotErr: res.rotErr });
+    this.onJointChange?.(this.getJointValues());
+  }
+
+  /**
+   * The handle lives in the robot base frame (that is what makes its arrows line
+   * up with URDF X/Y/Z), while `tcpPose` and the solver work in world space - the
+   * viewer's Y-up world is a rotated parent, so these two have to be converted at
+   * the boundary or the handle ends up somewhere else entirely.
+   */
+  private baseToWorld(pose: IkTarget): IkTarget {
+    this.robotRoot.updateMatrixWorld(true);
+    const worldQuat = this.robotRoot.getWorldQuaternion(new THREE.Quaternion());
+    return {
+      position: this.robotRoot.localToWorld(pose.position.clone()),
+      quaternion: worldQuat.multiply(pose.quaternion.clone()),
+    };
+  }
+
+  private worldToBase(pose: IkTarget): IkTarget {
+    this.robotRoot.updateMatrixWorld(true);
+    const worldQuatInv = this.robotRoot.getWorldQuaternion(new THREE.Quaternion()).invert();
+    return {
+      position: this.robotRoot.worldToLocal(pose.position.clone()),
+      quaternion: worldQuatInv.multiply(pose.quaternion.clone()),
+    };
+  }
+
+  /** Pick a TCP after a model load and re-seat the handle. */
+  private resetIkAfterLoad(): void {
+    const leaves = this.ikTcpLinkOptions();
+    if (this.ik.link === "" || !leaves.includes(this.ik.link)) {
+      this.ik.link = this.defaultIkTcpLink(leaves);
+    }
+    this.ikGizmo.setEnabled(this.ik.enabled && this.ik.link !== "");
+    this.syncIkHandle();
+  }
+
+  private defaultIkTcpLink(leaves: string[]): string {
+    if (leaves.length === 0) {
+      return "";
+    }
+    // A mounting-flange / tool frame is the TCP a person means when the model
+    // names one; otherwise take the deepest leaf, i.e. the tip of the longest
+    // chain (the URDF's own end frame often sits at the wrist centre).
+    const named = leaves.find((name) => /flange|tool/i.test(name));
+    if (named) {
+      return named;
+    }
+    const links = this.robotLinks();
+    let best = leaves[0];
+    let bestDepth = -1;
+    for (const name of leaves) {
+      let depth = 0;
+      for (
+        let node: THREE.Object3D | null = links[name] ?? null;
+        node && node !== this.robotRoot;
+        node = node.parent
+      ) {
+        depth++;
+      }
+      if (depth > bestDepth) {
+        bestDepth = depth;
+        best = name;
+      }
+    }
+    return best;
   }
 
   applySettings(s: ViewerSettings): void {

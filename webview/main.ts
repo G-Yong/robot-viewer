@@ -71,7 +71,17 @@ function bootstrap(): void {
       state.opcua = { ...config, password: "" };
       setState(state);
     },
+    onIkEnabled: (enabled) => viewer.setIkEnabled(enabled),
+    onIkMode: (mode) => viewer.setIkMode(mode),
+    onIkTcpLink: (link) => viewer.setIkTcpLink(link),
+    onIkToolOffset: (x, y, z) => viewer.setIkToolOffset(x, y, z),
+    onIkHandleSize: (factor) => viewer.setIkHandleSize(factor),
   });
+
+  // Joint values changed by something other than the sliders (an IK drag, a
+  // loaded scene): keep the sidebar in step.
+  viewer.onJointChange = (values) => ui.updateJointValues(values);
+  viewer.onIkStatus = (status) => ui.updateIkStatus(status);
 
   // Restore a previously saved OPC UA configuration, if any.
   const saved = getState<PersistedState>();
@@ -143,6 +153,13 @@ function bootstrap(): void {
       saveScene();
     }
   });
+
+  // Automation seam for the offline UI harness (tools/uiHarness.html), which
+  // drives the bundled webview in a plain browser to check the IK interaction.
+  // Never set inside a real webview.
+  if ((window as unknown as { __ROBOT_VIEWER_TEST__?: boolean }).__ROBOT_VIEWER_TEST__) {
+    (window as unknown as { __robotViewer?: unknown }).__robotViewer = { viewer, ui };
+  }
 
   post({ type: "ready" });
 }

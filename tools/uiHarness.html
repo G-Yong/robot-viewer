@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Robot Viewer - UI harness</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #111;
+      }
+      #app {
+        width: 100vw;
+        height: 100vh;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      Harness for checking the webview's interaction outside VS Code: it stubs
+      the few VS Code webview APIs the bundle touches, loads the real bundle, and
+      can then be driven like the webview would be. Used by tools/serveHarness.js
+      (http, not file://, because of the URDF fetch).
+    -->
+    <div id="app"></div>
+    <script>
+      const posted = [];
+      // The bundle only needs these three; anything it posts is captured so the
+      // harness can inspect it (and so the "ready" handshake is visible).
+      window.__ROBOT_VIEWER_TEST__ = true;
+      window.acquireVsCodeApi = () => ({
+        postMessage: (msg) => posted.push(msg),
+        getState: () => undefined,
+        setState: () => {},
+      });
+      window.__posted = posted;
+      window.__send = (msg) => window.dispatchEvent(new MessageEvent("message", { data: msg }));
+    </script>
+    <script src="../dist/webview.js"></script>
+    <script>
+      window.__ready = false;
+      // ?model=samples/dual_arm.urdf loads another fixture; the default keeps the
+      // original one-file behaviour. Paths are relative to the repository root.
+      const model = new URLSearchParams(location.search).get("model") ?? "samples/simple_arm.urdf";
+      fetch("../" + model)
+        .then((r) => r.text())
+        .then((urdfContent) => {
+          window.__send({
+            type: "loadModel",
+            urdfContent,
+            workspaceBase: "",
+            fileName: model.split("/").pop(),
+          });
+          window.__ready = true;
+        })
+        .catch((e) => {
+          window.__error = String(e);
+        });
+    </script>
+  </body>
+</html>
