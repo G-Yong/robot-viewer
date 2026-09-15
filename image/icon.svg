@@ -34,7 +34,7 @@
   <polygon points='93.38,85.5 95.98,84 95.98,76 93.38,77.5' fill='#2b93ad'/>
   <polygon points='93.38,85.5 88.19,82.5 88.19,74.5 93.38,77.5' fill='#1f7d95'/>
   <polygon points='93.38,85.5 95.98,84 95.98,76 90.78,73 88.19,74.5 88.19,82.5' fill='none' stroke='#14717e' stroke-width='0.9'/>
-  <text x='118' y='96' fill='#ef5350' font-family='Arial' font-weight='bold' font-size='14' text-anchor='middle' dominant-baseline='central'>X</text>
-  <text x='22' y='96' fill='#66bb6a' font-family='Arial' font-weight='bold' font-size='14' text-anchor='middle' dominant-baseline='central'>Y</text>
+  <text x='22' y='96' fill='#ef5350' font-family='Arial' font-weight='bold' font-size='14' text-anchor='middle' dominant-baseline='central'>X</text>
+  <text x='118' y='96' fill='#66bb6a' font-family='Arial' font-weight='bold' font-size='14' text-anchor='middle' dominant-baseline='central'>Y</text>
   <text x='70' y='20' fill='#42a5f5' font-family='Arial' font-weight='bold' font-size='14' text-anchor='middle' dominant-baseline='central'>Z</text>
 </svg>
